@@ -24,7 +24,7 @@ nix run github:r33drichards/bash-agent
 By default, the agent uses `prompt.md` as the system prompt. You can specify a custom prompt file with the `--prompt-file` flag:
 
 ```sh
-nix run github:r33drichards/bash-agent -- --prompt-file myprompt.md
+nix run github:r33drichards/bash-agent -- --prompt-file prompt.md
 ```
 
 Or, if running directly with Python:
