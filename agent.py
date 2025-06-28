@@ -11,7 +11,7 @@ from anthropic import RateLimitError, APIError
 
 def main():
     parser = argparse.ArgumentParser(description='LLM Agent with configurable prompt file')
-    parser.add_argument('--prompt-file', type=str, default='prompt.md',
+    parser.add_argument('--prompt-file', type=str, default=None, required=False,
                       help='Path to the prompt file (default: prompt.md)')
     args = parser.parse_args()
     
@@ -79,9 +79,12 @@ class LLM:
         self.client = anthropic.Anthropic()
         self.model = model
         self.messages = []
-        # read prompt file from provided path
-        with open(prompt_file, 'r') as f:
-            prompt = f.read()
+        if prompt_file:
+            # read prompt file from provided path
+            with open(prompt_file, 'r') as f:
+                prompt = f.read()
+        else:
+            prompt = ""
         self.system_prompt = """You are a helpful AI assistant with access to bash commands.
         You can help the user by executing commands and interpreting the results.
         Be careful with destructive commands and always explain what you're doing.
