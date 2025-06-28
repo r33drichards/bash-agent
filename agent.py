@@ -138,9 +138,15 @@ def handle_tool_call(tool_call):
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
     command = tool_call["input"]["command"]
-    print(f"Executing bash command: {command}")
-    output_text = execute_bash(command)
-    print(f"Bash output:\n{output_text}")
+    print(f"\nAbout to execute bash command:\n\n{command}")
+    confirm = input("Enter to confirm or x to cancel").strip().lower()
+    if confirm == "x":
+        print("Command execution skipped by user.")
+        output_text = "Command execution was skipped by user confirmation. Seek user input for next steps"
+    else:
+        print(f"Executing bash command: {command}")
+        output_text = execute_bash(command)
+        print(f"Bash output:\n{output_text}")
     return dict(
         type="tool_result",
         tool_use_id=tool_call["id"],

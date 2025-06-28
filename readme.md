@@ -1,97 +1,94 @@
-# An Agent that Resolves Merge Conflicts Automatically
+# Bash Agent
 
-**Warning!** This agent executes bash commands on your local shell. Its reccomended to run this inside of a vm or docker container, in order to prevent accidental data loss. 
+**Warning!** This agent executes bash commands on your local shell. It is recommended to run this inside a VM or Docker container to prevent accidental data loss.
 
-## Quickstart 
+## Quickstart
 
-### Prequisites 
+### Prerequisites
 
-nix should be installed to run the agent script
+You need to have Nix installed to run the agent script:
 
-```
+```sh
 curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
 ```
 
-## Running the Agent
+### Running the Agent
 
-you should be in the state where you have attempted to rebase and git is telling you that there are conflicts 
-```
-
-[robertwendt@nixos:~/repo]$ git status
-On branch foo
-Your branch is up to date with 'origin/foo'.
-
-nothing to commit, working tree clean
-
-[robertwendt@nixos:~/repo]$ git rebase origin/main 
-Auto-merging src/Homepage/Homepage.jsx
-CONFLICT (content): Merge conflict in src/Homepage/Homepage.jsx
-error: could not apply d62f39d4... add foo
-hint: Resolve all conflicts manually, mark them as resolved with
-hint: "git add/rm <conflicted_files>", then run "git rebase --continue".
-hint: You can instead skip this commit: run "git rebase --skip".
-hint: To abort and get back to the state before "git rebase", run "git rebase --abort".
-hint: Disable this message with "git config advice.mergeConflict false"
-Could not apply d62f39d4... add foo
-
-[robertwendt@nixos:~/repo]$ # now you would run nix run github:r33drichards/merge-conflict
-```
-
-then set your anthropic key and run the agent with `nix run`
-
-
-```
-export ANTHROPIC_API_KEY=
-nix run github:r33drichards/merge-conflict
-```
-
-## local testing
-
-
-clone the repo
-
-```
-git clone git@github.com:/r33drichards/merge-conflict
-```
-
-to intentionally create a merge conflict, commit a file with the following contents: foo: foo. Commit. Branch off this commit and change one of the foo's to bar, foo: bar And branch of to another from your first branch and change the same line to foo: baz.
-
-Now merge one back into your starting branch and then the other.
-
-
+Set your Anthropic API key and run the agent with Nix:
 
 ```sh
-#! /bin/bash
-# delete all existing branches if they exist 
-git branch -D test-root
-git branch -D test-branch
-git branch -D test-branch2
-
-
-# create the root commit
-git switch -c test-root
-echo "foo" > foo
-git add foo
-git commit -m "foo"
-
-git switch -c test-branch
-echo "bar" > foo
-git add foo
-git commit -m "bar"
-
-# create test-branch2 from test-root
-git checkout test-root
-git switch -c test-branch2
-echo "baz" > foo
-git add foo
-git commit -m "baz"
-
-git switch test-root
-git merge test-branch
-git merge test-branch2
+export ANTHROPIC_API_KEY=your-anthropic-key
+nix run github:r33drichards/bash-agent
 ```
 
-run the agent to solve the merge conflict for you
+By default, the agent uses `prompt.md` as the system prompt. You can specify a custom prompt file with the `--prompt-file` flag:
+
+```sh
+nix run github:r33drichards/bash-agent -- --prompt-file myprompt.md
 ```
-ANTHROPIC_API_KEY='' nix run .
+
+Or, if running directly with Python:
+
+```sh
+export ANTHROPIC_API_KEY=your-anthropic-key
+python agent.py --prompt-file myprompt.md
 ```
+
+### What It Does
+
+- The agent launches an interactive loop where you can type instructions.
+- When a bash command is to be executed, the agent will ask for confirmation before running it.
+- All bash commands are executed in your local shell, and their output is shown in the conversation.
+
+### Example Usage
+
+```sh
+$ nix run github:r33drichards/bash-agent
+=== LLM Agent Loop with Claude and Bash Tool ===
+Type 'exit' to end the conversation.
+
+You: echo Hello World
+Agent: About to execute bash command:
+
+echo Hello World
+Enter to confirm or x to cancel
+Executing bash command: echo Hello World
+Bash output:
+STDOUT:
+Hello World
+STDERR:
+
+EXIT CODE: 0
+```
+
+### Local Development
+
+Clone the repository:
+
+```sh
+git clone git@github.com:r33drichards/bash-agent.git
+cd bash-agent
+```
+
+Install dependencies (recommended: use Nix):
+
+```sh
+nix develop
+```
+
+Or, with pip (not recommended, but possible):
+
+```sh
+pip install anthropic tenacity
+```
+
+Run the agent:
+
+```sh
+export ANTHROPIC_API_KEY=your-anthropic-key
+python agent.py
+```
+
+### Security Warning
+
+This agent can execute arbitrary bash commands. Use with caution and preferably in an isolated environment.
