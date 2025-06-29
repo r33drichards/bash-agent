@@ -18,7 +18,27 @@
         # Create a script that runs the agent with a specific prompt file
         agentScript = promptFile: pkgs.writeScriptBin "agent" ''
           #!${pkgs.bash}/bin/bash
-          exec ${pkgs.python3.withPackages (ps: with ps; [ anthropic tenacity ])}/bin/python3 ${./agent.py} --prompt-file ${promptFile} "$@"
+          # Python packages available in the agent's environment:
+          # numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn
+          exec ${pkgs.python3.withPackages (ps: with ps; [
+            anthropic
+            tenacity
+            matplotlib
+            ipython
+            numpy
+            pandas
+            seaborn
+            scikit-learn
+            ipykernel
+            torch
+            tqdm
+            gymnasium
+            torchvision
+            tensorboard
+            torch-tb-profiler
+            opencv-python
+            nbconvert
+          ])}/bin/python3 ${./agent.py} --prompt-file ${promptFile} "$@"
         '';
 
       in
