@@ -82,7 +82,16 @@
           name = "bash-agent";
           tag = "latest";
           maxLayers = 120;
-          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.nix pkgs.grep ];
+          contents = with pkgs; [ 
+            pythonEnv
+            bash 
+            coreutils 
+            findutils 
+            git 
+            nix 
+            gnugrep 
+            gnutar
+          ];
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
