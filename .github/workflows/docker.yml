@@ -52,7 +52,7 @@ jobs:
           echo "Built ${{ matrix.flake_image }}"
           TAG=$(git rev-parse HEAD)
           echo "Logging in to Docker Hub"
-          echo "${SKOPEO_PASS}" | skopeo login --username "${SKOPEO_USER}" --password-stdin docker://${REGISTRY}
+          echo "${SKOPEO_PASS}" | skopeo login --username "${SKOPEO_USER}" --password-stdin docker.io
           echo "Pushing ${{ matrix.flake_image }} with tag $TAG"
           ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${SKOPEO_USER}/${{ matrix.flake_image }}:$TAG
           echo "Pushing ${{ matrix.flake_image }} with tag latest"
