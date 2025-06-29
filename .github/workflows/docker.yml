@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  IMAGE_NAME: wholelottahoopla
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -47,15 +44,14 @@ jobs:
       - name: Build and stream image to registry with skopeo
         env:
           REGISTRY: docker.io
-          IMAGE: ${{ env.IMAGE_NAME }}
           SKOPEO_USER: "wholelottahoopla"
           SKOPEO_PASS: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           nix build .#${{ matrix.flake }}
           TAG=$(git rev-parse HEAD)
           echo "${SKOPEO_PASS}" | skopeo login --username "${SKOPEO_USER}" --password-stdin docker://${REGISTRY}
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${IMAGE}:${{ matrix.flake_image }}-$TAG
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${IMAGE}:${{ matrix.flake_image }}-latest
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${{ matrix.flake_image }}:$TAG
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${{ matrix.flake_image }}:latest
 
       # Save Nix store cache after build
       - name: Save Nix store cache
