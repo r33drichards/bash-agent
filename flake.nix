@@ -77,6 +77,7 @@
             nix 
             gnugrep 
             gnutar
+            openssh
           ];
 
       in
