@@ -17,12 +17,18 @@ def main():
     parser = argparse.ArgumentParser(description='LLM Agent with configurable prompt file')
     parser.add_argument('--prompt-file', type=str, default=None, required=False,
                       help='Path to the prompt file (default: prompt.md)')
+    # initial user input
+    parser.add_argument('--initial-user-input', type=str, default=None, required=False,
+                      help='Initial user input (default: None)')
     args = parser.parse_args()
     
     try:
         print("\n=== LLM Agent Loop with Claude and Bash Tool ===\n")
         print("Type 'exit' to end the conversation.\n")
-        loop(LLM("claude-opus-4-20250514", args.prompt_file))
+        loop(
+            LLM("claude-opus-4-20250514", args.prompt_file),
+            args.initial_user_input
+        )
     except KeyboardInterrupt:
         print("\n\nExiting. Goodbye!")
     except Exception as e:
@@ -98,6 +104,46 @@ ipython_tool = {
             }
         },
         "required": ["code"]
+    }
+}
+
+# --- Edit File tool definitions ---
+# Requires: pip install patch
+edit_file_diff_tool = {
+    "name": "edit_file_diff",
+    "description": "Edit a file by applying a unified diff patch. The input should include the file path and the diff string in unified diff format.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the file to edit."
+            },
+            "diff": {
+                "type": "string",
+                "description": "Unified diff string to apply to the file."
+            }
+        },
+        "required": ["file_path", "diff"]
+    }
+}
+
+overwrite_file_tool = {
+    "name": "overwrite_file",
+    "description": "Overwrite a file with new content. The input should include the file path and the new content as a string.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the file to overwrite."
+            },
+            "content": {
+                "type": "string",
+                "description": "The new content to write to the file."
+            }
+        },
+        "required": ["file_path", "content"]
     }
 }
 
@@ -179,6 +225,39 @@ def execute_ipython(code, print_result=False):
     except Exception as e:
         return f"Error executing Python code: {str(e)}"
 
+def apply_unified_diff(file_path, diff):
+    """Apply a unified diff to a file using the python-patch library. Returns a result string."""
+    import tempfile
+    import patch
+    import os
+    try:
+        # Write the diff to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.patch') as tmp_patch:
+            tmp_patch.write(diff)
+            patch_path = tmp_patch.name
+        # Apply the patch
+        pset = patch.fromfile(patch_path)
+        if not pset:
+            os.unlink(patch_path)
+            return f"Failed to parse patch file."
+        result = pset.apply()
+        os.unlink(patch_path)
+        if result:
+            return f"Applied diff to {file_path}."
+        else:
+            return f"Failed to apply diff to {file_path}."
+    except Exception as e:
+        return f"Error applying diff: {str(e)}"
+
+def overwrite_file(file_path, content):
+    """Overwrite a file with new content."""
+    try:
+        with open(file_path, 'w') as f:
+            f.write(content)
+        return f"Overwrote {file_path} with new content."
+    except Exception as e:
+        return f"Error overwriting file: {str(e)}"
+
 def user_input():
     x = input("You: ")
     if x.lower() in ["exit", "quit"]:
@@ -210,7 +289,7 @@ class LLM:
             "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n"
             + prompt
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
@@ -316,6 +395,96 @@ def handle_tool_call(tool_call):
         else:
             print(f"Executing Python code:")
             output_text = execute_ipython(code, print_result)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(
+                type="text",
+                text=output_text
+            )]
+        )
+    elif tool_call["name"] == "edit_file_diff":
+        file_path = tool_call["input"]["file_path"]
+        diff = tool_call["input"]["diff"]
+        print(f"\nAbout to apply unified diff to {file_path}:")
+        print(diff)
+        # Preview the result of applying the diff
+        import tempfile
+        import shutil
+        import patch
+        preview_success = False
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.patch') as tmp_patch:
+                tmp_patch.write(diff)
+                patch_path = tmp_patch.name
+            with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8') as tmp_file:
+                preview_path = tmp_file.name
+            shutil.copyfile(file_path, preview_path)
+            pset = patch.fromfile(patch_path)
+            if pset:
+                # Patch expects the file to be in the current directory, so chdir
+                cwd = os.getcwd()
+                try:
+                    os.chdir(os.path.dirname(preview_path) or ".")
+                    # Patch the temp file (patch library works on filenames)
+                    # We need to adjust the filenames in the patch object to match the temp file
+                    for patched_file in pset.items:
+                        patched_file.target = os.path.basename(preview_path)
+                        patched_file.source = os.path.basename(preview_path)
+                    result = pset.apply()
+                finally:
+                    os.chdir(cwd)
+                if result:
+                    with open(preview_path, 'r', encoding='utf-8') as f:
+                        preview_content = f.read()
+                    print("\n--- Preview of file after applying diff ---\n")
+                    print(preview_content)
+                    preview_success = True
+                else:
+                    print("\n[Preview failed: could not apply diff to temp file]")
+            else:
+                print("\n[Preview failed: could not parse diff]")
+        except Exception as e:
+            print(f"[Preview error: {e}]")
+        finally:
+            try:
+                os.unlink(patch_path)
+            except Exception:
+                pass
+            try:
+                os.unlink(preview_path)
+            except Exception:
+                pass
+        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if confirm == "x":
+            print("Diff application skipped by user.")
+            output_text = "Diff application was skipped by user confirmation. Seek user input for next steps"
+        else:
+            print(f"Applying diff to {file_path}")
+            output_text = apply_unified_diff(file_path, diff)
+            print(f"Diff output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(
+                type="text",
+                text=output_text
+            )]
+        )
+    elif tool_call["name"] == "overwrite_file":
+        file_path = tool_call["input"]["file_path"]
+        content = tool_call["input"]["content"]
+        print(f"\nAbout to overwrite {file_path} with new content.")
+        print("\n--- Preview of new file content ---\n")
+        print(content)
+        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if confirm == "x":
+            print("Overwrite skipped by user.")
+            output_text = "Overwrite was skipped by user confirmation. Seek user input for next steps"
+        else:
+            print(f"Overwriting {file_path}")
+            output_text = overwrite_file(file_path, content)
+            print(f"Overwrite output:\n{output_text}")
         return dict(
             type="tool_result",
             tool_use_id=tool_call["id"],

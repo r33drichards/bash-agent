@@ -38,6 +38,7 @@
             torch-tb-profiler
             opencv-python
             nbconvert
+            patch
           ])}/bin/python3 ${./agent.py} --prompt-file ${promptFile} "$@"
         '';
 
