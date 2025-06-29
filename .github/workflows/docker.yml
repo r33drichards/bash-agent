@@ -1,0 +1,33 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGE_NAME: wholelottahoopla/agent
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: wholelottahoopla
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Load and push Docker image
+        run: |
+          nix build .#streamLayered
+          ./result | docker load
+          docker tag bash-agent:latest ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
+          docker push ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
+
