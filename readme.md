@@ -1,6 +1,6 @@
-# Bash Agent
+# LLM Agent with Multiple Tools
 
-**Warning!** This agent executes bash commands on your local shell. It is recommended to run this inside a VM or Docker container to prevent accidental data loss.
+**Warning!** This agent can execute bash commands, SQL queries, Python code, and modify files on your system. It is strongly recommended to run this inside a VM or Docker container to prevent accidental data loss.
 
 ## Quickstart
 
@@ -27,21 +27,58 @@ By default, the agent uses `prompt.md` as the system prompt. You can specify a c
 nix run github:r33drichards/bash-agent -- --prompt-file prompt.md
 ```
 
+You can also provide an initial user input to start the conversation:
+
+```sh
+nix run github:r33drichards/bash-agent -- --initial-user-input "List all Python files in the current directory"
+```
+
 Or, if running directly with Python:
 
 ```sh
 export ANTHROPIC_API_KEY=your-anthropic-key
 python agent.py --prompt-file myprompt.md
+python agent.py --initial-user-input "Create a simple Python script"
 ```
+
+### Command Line Arguments
+
+- `--prompt-file`: Path to a custom prompt file (default: uses built-in prompt)
+- `--initial-user-input`: Initial user input to start the conversation (default: None)
 
 ### What It Does
 
-- The agent launches an interactive loop where you can type instructions.
-- When a bash command is to be executed, the agent will ask for confirmation before running it.
-- All bash commands are executed in your local shell, and their output is shown in the conversation.
+The agent launches an interactive loop where you can give it instructions. It has access to several tools:
+
+1. **Bash Tool**: Execute shell commands
+2. **SQLite Tool**: Query and modify SQLite databases
+3. **IPython Tool**: Execute Python code with access to common libraries
+4. **File Editing Tools**: 
+   - Apply unified diffs to files
+   - Overwrite files with new content
+
+Before executing any tool, the agent will:
+- Show you what it's about to do
+- Ask for confirmation
+- For file edits, show a preview of the changes
+
+### Available Python Libraries
+
+The IPython environment includes these pre-installed libraries:
+- numpy
+- matplotlib
+- scikit-learn
+- torch (PyTorch)
+- pandas
+- seaborn
+- opencv-python
+- gymnasium
+- tensorboard
+- And more...
 
 ### Example Usage
 
+#### Basic Bash Command
 ```sh
 $ nix run github:r33drichards/bash-agent
 === LLM Agent Loop with Claude and Bash Tool ===
@@ -76,11 +113,6 @@ Install dependencies (recommended: use Nix):
 nix develop
 ```
 
-Or, with pip (not recommended, but possible):
-
-```sh
-pip install anthropic tenacity
-```
 
 Run the agent:
 
@@ -91,4 +123,10 @@ python agent.py
 
 ### Security Warning
 
-This agent can execute arbitrary bash commands. Use with caution and preferably in an isolated environment.
+This agent can:
+- Execute arbitrary bash commands
+- Run SQL queries on any SQLite database
+- Execute Python code
+- Modify or overwrite any file on your system
+
+**Use with caution and preferably in an isolated environment.**
