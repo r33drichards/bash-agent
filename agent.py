@@ -34,7 +34,10 @@ def main():
         print(f"\n\nAn error occurred: {str(e)}")
 
 def loop(llm, initial_user_input=None):
-    msg = initial_user_input if initial_user_input else user_input()
+    if initial_user_input:
+        msg = [{"type": "text", "text": initial_user_input}]
+    else:
+        msg = user_input()
     while True:
         output, tool_calls = llm(msg)
         print("Agent: ", output)
