@@ -89,6 +89,19 @@
             Env = [ "PYTHONUNBUFFERED=1" ];
           };
         };
+
+                # Add a streaming layered Docker image output
+        packages.agent-with-nodejs = pkgs.dockerTools.streamLayeredImage {
+          name = "agent-with-nodejs";
+          tag = "latest";
+          maxLayers = 120;
+          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.git pkgs.nix pkgs.nodejs ];
+          config = {
+            Entrypoint = [ "${agentEntrypoint}" ];
+            WorkingDir = "/app";
+            Env = [ "PYTHONUNBUFFERED=1" ];
+          };
+        };
       }
     );
 }
