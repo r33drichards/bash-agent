@@ -42,6 +42,32 @@
           ])}/bin/python3 ${./agent.py} --prompt-file ${promptFile} "$@"
         '';
 
+        pythonEnv = pkgs.python3.withPackages (ps: with ps; [
+          anthropic
+          tenacity
+          matplotlib
+          ipython
+          numpy
+          pandas
+          seaborn
+          scikit-learn
+          ipykernel
+          torch
+          tqdm
+          gymnasium
+          torchvision
+          tensorboard
+          torch-tb-profiler
+          opencv-python
+          nbconvert
+          patch
+        ]);
+
+        agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
+          #!${pkgs.bash}/bin/bash
+          exec ${pythonEnv}/bin/python3 /app/agent.py --prompt-file /app/prompt.md "$@"
+        '';
+
       in
       {
         devShells.default = devshell;
@@ -49,6 +75,19 @@
         apps.default = {
           type = "app";
           program = "${(agentScript ./prompt.md)}/bin/agent";
+        };
+        
+        # Add a streaming layered Docker image output
+        packages.streamLayered = pkgs.dockerTools.streamLayeredImage {
+          name = "bash-agent";
+          tag = "latest";
+          maxLayers = 120;
+          contents = [ pythonEnv pkgs.bash ];
+          config = {
+            Cmd = [ "${agentEntrypoint}" ];
+            WorkingDir = "/app";
+            Env = [ "PYTHONUNBUFFERED=1" ];
+          };
         };
       }
     );

@@ -25,7 +25,7 @@ def main():
         print("\n=== LLM Agent Loop with Claude and Bash Tool ===\n")
         print("Type 'exit' to end the conversation.\n")
         loop(
-            LLM("claude-opus-4-20250514", args.prompt_file),
+            LLM("claude-3-7-sonnet-latest", args.prompt_file),
             args.initial_user_input
         )
     except KeyboardInterrupt:
