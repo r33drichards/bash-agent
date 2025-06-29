@@ -7,11 +7,20 @@ on:
     branches: [ main ]
 
 env:
-  IMAGE_NAME: wholelottahoopla/agent
+  IMAGE_NAME: wholelottahoopla
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - flake: streamLayered
+            flake_image: bash-agent
+            docker_image: agent
+          - flake: agent-with-nodejs
+            flake_image: agent-with-nodejs
+            docker_image: agent-nodejs
     steps:
       - uses: actions/checkout@v4
       
@@ -33,14 +42,14 @@ jobs:
           username: wholelottahoopla
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Load and push Docker image
+      - name: Build, load, tag, and push Docker image
         run: |
-          nix build .#streamLayered
+          nix build .#${{ matrix.flake }}
           ./result | docker load
-          docker tag bash-agent:latest ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
-          docker push ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
-          docker tag bash-agent:latest ${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.IMAGE_NAME }}:latest
+          docker tag ${{ matrix.flake_image }}:latest ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:`git rev-parse HEAD`
+          docker push ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:`git rev-parse HEAD`
+          docker tag ${{ matrix.docker_image }}:latest ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:latest
+          docker push ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:latest
 
       # Save Nix store cache after build
       - name: Save Nix store cache
