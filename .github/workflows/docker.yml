@@ -54,8 +54,8 @@ jobs:
           ./result | docker load
           docker tag ${{ matrix.flake_image }}:latest ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:`git rev-parse HEAD`
           docker push ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:`git rev-parse HEAD`
-          docker tag ${{ matrix.docker_image }}:latest ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:latest
-          docker push ${{ env.IMAGE_NAME }}/${{ matrix.docker_image }}:latest
+          docker tag ${{ matrix.flake_image }}:latest ${{ env.IMAGE_NAME }}/${{ matrix.flake_image }}:latest
+          docker push ${{ env.IMAGE_NAME }}/${{ matrix.flake_image }}:latest
 
       # Save Nix store cache after build
       - name: Save Nix store cache
