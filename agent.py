@@ -1,6 +1,5 @@
 import os
 import subprocess
-from typing import Dict, List, Any, Optional, Tuple, Union
 import argparse
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -34,8 +33,8 @@ def main():
     except Exception as e:
         print(f"\n\nAn error occurred: {str(e)}")
 
-def loop(llm):
-    msg = user_input()
+def loop(llm, initial_user_input=None):
+    msg = initial_user_input if initial_user_input else user_input()
     while True:
         output, tool_calls = llm(msg)
         print("Agent: ", output)
