@@ -47,11 +47,16 @@ jobs:
           SKOPEO_USER: "wholelottahoopla"
           SKOPEO_PASS: ${{ secrets.DOCKER_PASSWORD }}
         run: |
+          echo "Building ${{ matrix.flake_image }} with tag $TAG"
           nix build .#${{ matrix.flake }}
+          echo "Built ${{ matrix.flake_image }}"
           TAG=$(git rev-parse HEAD)
+          echo "Logging in to Docker Hub"
           echo "${SKOPEO_PASS}" | skopeo login --username "${SKOPEO_USER}" --password-stdin docker://${REGISTRY}
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${{ matrix.flake_image }}:$TAG
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${{ matrix.flake_image }}:latest
+          echo "Pushing ${{ matrix.flake_image }} with tag $TAG"
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${SKOPEO_USER}/${{ matrix.flake_image }}:$TAG
+          echo "Pushing ${{ matrix.flake_image }} with tag latest"
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${SKOPEO_USER}/${{ matrix.flake_image }}:latest
 
       # Save Nix store cache after build
       - name: Save Nix store cache
