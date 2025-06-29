@@ -2,6 +2,16 @@
 
 **Warning!** This agent can execute bash commands, SQL queries, Python code, and modify files on your system. It is strongly recommended to run this inside a VM or Docker container to prevent accidental data loss.
 
+Run the agent inside a docker container to sandbox it with the command:
+
+```sh
+docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+    -v $(pwd):/app -w /app wholelottahoopla/agent:ce6f5b4d19bd142a45784139a187e24ebc44b933 \
+    --initial-user-input "what is the capital of france"
+```
+
+
+
 ## Quickstart
 
 ### Prerequisites
@@ -42,8 +52,17 @@ python agent.py --initial-user-input "Create a simple Python script"
 ```
 
 
-## Building Nix container image and running with Docker
+## Running with Docker
 
+using the pre built docker image:
+
+```sh
+docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+    -v $(pwd):/app -w /app wholelottahoopla/agent:ce6f5b4d19bd142a45784139a187e24ebc44b933 \
+    --initial-user-input "what is the capital of france"
+```
+
+or building the image yourself:
 
 ```sh
 nix build .#streamLayered
@@ -53,13 +72,7 @@ docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
     --initial-user-input "what is the capital of france"
 ```
 
-using the pre built docker image:
 
-```sh
-docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd):/app -w /app wholelottahoopla/agent:latest \
-    --initial-user-input "what is the capital of france"
-```
 
 ### Command Line Arguments
 
