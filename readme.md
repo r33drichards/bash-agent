@@ -53,6 +53,14 @@ docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
     --initial-user-input "what is the capital of france"
 ```
 
+using the pre built docker image:
+
+```sh
+docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+    -v $(pwd):/app -w /app wholelottahoopla/agent:latest \
+    --initial-user-input "what is the capital of france"
+```
+
 ### Command Line Arguments
 
 - `--prompt-file`: Path to a custom prompt file (default: uses built-in prompt)
