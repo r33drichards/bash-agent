@@ -78,6 +78,7 @@
             gnugrep 
             gnutar
             openssh
+            pkgs.nodejs
           ];
 
       in
@@ -102,18 +103,7 @@
           };
         };
 
-                # Add a streaming layered Docker image output
-        packages.agent-with-nodejs = pkgs.dockerTools.streamLayeredImage {
-          name = "agent-with-nodejs";
-          tag = "latest";
-          maxLayers = 120;
-          contents = baseContents ++ [ pkgs.nodejs ];
-          config = {
-            Entrypoint = [ "${agentEntrypoint}" ];
-            WorkingDir = "/app";
-            Env = [ "PYTHONUNBUFFERED=1" ];
-          };
-        };
+
       }
     );
 }
