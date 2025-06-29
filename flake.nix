@@ -84,7 +84,7 @@
           maxLayers = 120;
           contents = [ pythonEnv pkgs.bash ];
           config = {
-            Cmd = [ "${agentEntrypoint}" ];
+            Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
             Env = [ "PYTHONUNBUFFERED=1" ];
           };

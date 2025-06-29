@@ -41,17 +41,19 @@ python agent.py --prompt-file myprompt.md
 python agent.py --initial-user-input "Create a simple Python script"
 ```
 
-#### Running With=== LLM Agent Loop with Claude and Bash Tool ===
+#### Running With Docker 
 
-Type 'exit' to end the conversation.
-
-
-
-An error occurred: ANTHROPIC_API_KEY environment variable not found.
 ```sh
  docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v $(pwd):/app -w /app nixos/nix nix --extra-experimental-features 'nix-command flakes' run github:r33drichards/bash-agent -- --initial-user-input "what is the capital of france" --prompt-file prompt.md
-
  ```
+
+## Building Nix container image and running with Docker
+Loaded image: bash-agent:latest
+```sh
+nix build .#streamLayered
+./result | docker load
+docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v $(pwd):/app -w /app bash-agent:latest -- --initial-user-input "what is the capital of france" --prompt-file prompt.md
+```
 
 ### Command Line Arguments
 
