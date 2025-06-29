@@ -54,8 +54,8 @@ jobs:
           nix build .#${{ matrix.flake }}
           TAG=$(git rev-parse HEAD)
           echo "${SKOPEO_PASS}" | skopeo login --username "${SKOPEO_USER}" --password-stdin docker://${REGISTRY}
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${IMAGE}/${{ matrix.flake_image }}:$TAG
-          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${IMAGE}/${{ matrix.flake_image }}:latest
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${IMAGE}:${{ matrix.flake_image }}-$TAG
+          ./result | gzip --fast | skopeo copy docker-archive:/dev/stdin docker://${REGISTRY}/${SKOPEO_USER}/${IMAGE}:${{ matrix.flake_image }}-latest
 
       # Save Nix store cache after build
       - name: Save Nix store cache
