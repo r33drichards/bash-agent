@@ -68,6 +68,17 @@
           exec ${pythonEnv}/bin/python3  ${./agent.py} --prompt-file ${./prompt.md} "$@"
         '';
 
+        baseContents = with pkgs; [ 
+            pythonEnv
+            bash 
+            coreutils 
+            findutils 
+            git 
+            nix 
+            gnugrep 
+            gnutar
+          ];
+
       in
       {
         devShells.default = devshell;
@@ -82,16 +93,7 @@
           name = "bash-agent";
           tag = "latest";
           maxLayers = 120;
-          contents = with pkgs; [ 
-            pythonEnv
-            bash 
-            coreutils 
-            findutils 
-            git 
-            nix 
-            gnugrep 
-            gnutar
-          ];
+          contents = baseContents;
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
@@ -104,7 +106,7 @@
           name = "agent-with-nodejs";
           tag = "latest";
           maxLayers = 120;
-          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.nix pkgs.nodejs pkgs.grep ];
+          contents = baseContents ++ [ pkgs.nodejs ];
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
