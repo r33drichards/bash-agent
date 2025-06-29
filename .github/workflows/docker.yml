@@ -30,4 +30,5 @@ jobs:
           ./result | docker load
           docker tag bash-agent:latest ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
           docker push ${{ env.IMAGE_NAME }}:`git rev-parse HEAD`
+          docker tag bash-agent:latest ${{ env.IMAGE_NAME }}:latest
 
