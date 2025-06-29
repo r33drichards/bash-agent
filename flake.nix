@@ -65,7 +65,7 @@
 
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
           #!${pkgs.bash}/bin/bash
-          exec ${pythonEnv}/bin/python3 /app/agent.py --prompt-file /app/prompt.md "$@"
+          exec ${pythonEnv}/bin/python3  ${./agent.py} --prompt-file ${./prompt.md} "$@"
         '';
 
       in

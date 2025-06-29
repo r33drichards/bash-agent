@@ -6,7 +6,7 @@ Run the agent inside a docker container to sandbox it with the command:
 
 ```sh
 docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd):/app -w /app wholelottahoopla/agent:ce6f5b4d19bd142a45784139a187e24ebc44b933 \
+    -v $(pwd):/app -w /app wholelottahoopla/agent:latest \
     --initial-user-input "what is the capital of france"
 ```
 
