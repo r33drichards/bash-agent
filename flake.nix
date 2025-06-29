@@ -82,7 +82,7 @@
           name = "bash-agent";
           tag = "latest";
           maxLayers = 120;
-          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.git pkgs.nix ];
+          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.nix ];
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
@@ -95,7 +95,7 @@
           name = "agent-with-nodejs";
           tag = "latest";
           maxLayers = 120;
-          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.git pkgs.nix pkgs.nodejs ];
+          contents = [ pythonEnv pkgs.bash pkgs.coreutils pkgs.findutils pkgs.git pkgs.nix pkgs.nodejs ];
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";

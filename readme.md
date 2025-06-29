@@ -11,6 +11,15 @@ docker run --pull always -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
 ```
 
 
+Running a agent that has nodejs installed:
+
+```sh
+docker run --pull always -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+    -v $(pwd):/app -w /app wholelottahoopla/agent-with-nodejs:latest \
+    --initial-user-input "what is the capital of france"
+```
+
+
 
 ## Quickstart
 
