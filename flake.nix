@@ -79,6 +79,7 @@
             gnutar
             openssh
             pkgs.nodejs
+            gawk
           ];
 
       in
