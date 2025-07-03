@@ -14,8 +14,7 @@ jobs:
         include:
           - flake: streamLayered
             flake_image: bash-agent
-          - flake: agent-with-nodejs
-            flake_image: agent-with-nodejs
+
     steps:
       - uses: actions/checkout@v4
       
