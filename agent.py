@@ -146,6 +146,34 @@ def handle_tool_confirm(data):
             'timestamp': datetime.now().isoformat()
         })
 
+@socketio.on('update_auto_confirm')
+def handle_update_auto_confirm(data):
+    session_id = session.get('session_id')
+    if session_id not in sessions:
+        emit('error', {'message': 'Session not found'})
+        return
+    
+    enabled = data.get('enabled', False)
+    sessions[session_id]['auto_confirm'] = enabled
+    
+    # Send confirmation message
+    status = 'enabled' if enabled else 'disabled'
+    emit('message', {
+        'type': 'system',
+        'content': f'Auto-confirm {status}.',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@socketio.on('get_auto_confirm_state')
+def handle_get_auto_confirm_state():
+    session_id = session.get('session_id')
+    if session_id not in sessions:
+        emit('error', {'message': 'Session not found'})
+        return
+    
+    enabled = sessions[session_id]['auto_confirm']
+    emit('auto_confirm_state', {'enabled': enabled})
+
 def handle_tool_call_web(tool_call, session_id, auto_confirm):
     """Handle tool call in web context"""
     if auto_confirm:
@@ -162,15 +190,42 @@ def handle_tool_call_web(tool_call, session_id, auto_confirm):
 def execute_tool_call_web(tool_call, session_id):
     """Execute tool call and emit results"""
     try:
-        # Send execution start message
-        emit('message', {
-            'type': 'system',
-            'content': f"Executing {tool_call['name']} tool...",
+        # Send detailed tool execution info
+        tool_info = {
+            'type': 'tool_execution',
+            'tool_name': tool_call['name'],
+            'tool_input': tool_call['input'],
             'timestamp': datetime.now().isoformat()
-        }, room=session_id)
+        }
+        
+        # Add the actual code/command being executed
+        if tool_call['name'] == 'bash':
+            tool_info['code'] = tool_call['input']['command']
+            tool_info['language'] = 'bash'
+        elif tool_call['name'] == 'ipython':
+            tool_info['code'] = tool_call['input']['code']
+            tool_info['language'] = 'python'
+        elif tool_call['name'] == 'sqlite':
+            tool_info['code'] = tool_call['input']['query']
+            tool_info['language'] = 'sql'
+        
+        emit('tool_execution_start', tool_info, room=session_id)
         
         # Execute the tool
         result = execute_tool_call(tool_call)
+        
+        # Extract the result content
+        result_content = ""
+        if result and 'content' in result and result['content']:
+            result_content = result['content'][0]['text'] if result['content'][0]['type'] == 'text' else str(result['content'])
+        
+        # Send detailed execution result
+        emit('tool_execution_result', {
+            'type': 'tool_result',
+            'tool_name': tool_call['name'],
+            'result': result_content,
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id)
         
         # Send result back to LLM
         llm = sessions[session_id]['llm']

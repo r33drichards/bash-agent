@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Agent</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <style>
         * {
             margin: 0;
@@ -42,6 +47,52 @@
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-label {
+            font-size: 12px;
+            color: #e6edf3;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background-color: #21262d;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .toggle-switch.active {
+            background-color: #238636;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background-color: #e6edf3;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(20px);
         }
 
         .status-dot {
@@ -219,6 +270,81 @@
             display: block;
         }
 
+        /* Tool execution styling */
+        .tool-execution {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+
+        .tool-execution-header {
+            background-color: #21262d;
+            padding: 12px 16px;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 14px;
+        }
+
+        .tool-execution-code {
+            background-color: #0d1117;
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .tool-execution-code pre {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        .tool-execution-result {
+            background-color: #0d1117;
+            padding: 16px;
+        }
+
+        .tool-execution-result pre {
+            margin: 0;
+            padding: 12px;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #e6edf3;
+        }
+
+        .tool-execution-result-header {
+            font-weight: 600;
+            color: #79c0ff;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tool-execution-code-header {
+            font-weight: 600;
+            color: #7ee787;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        /* Highlight.js overrides for dark theme */
+        .hljs {
+            background: transparent !important;
+            color: #e6edf3 !important;
+        }
+
         /* Scrollbar styling */
         .messages::-webkit-scrollbar {
             width: 8px;
@@ -259,9 +385,17 @@
 <body>
     <div class="header">
         <div class="title">Claude Code Agent</div>
-        <div class="status">
-            <span class="status-dot"></span>
-            <span id="status-text">Connecting...</span>
+        <div class="controls">
+            <div class="toggle-container">
+                <span class="toggle-label">Auto-confirm</span>
+                <div class="toggle-switch" id="auto-confirm-toggle">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            <div class="status">
+                <span class="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
         </div>
     </div>
 
@@ -292,9 +426,12 @@
         const sendButton = document.getElementById('send-button');
         const statusText = document.getElementById('status-text');
         const typingIndicator = document.getElementById('typing-indicator');
+        const autoConfirmToggle = document.getElementById('auto-confirm-toggle');
 
         let isConnected = false;
         let isTyping = false;
+        let autoConfirmEnabled = false;
+        let currentToolExecution = null;
 
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
@@ -311,6 +448,21 @@
         });
 
         sendButton.addEventListener('click', sendMessage);
+
+        // Auto-confirm toggle
+        autoConfirmToggle.addEventListener('click', function() {
+            autoConfirmEnabled = !autoConfirmEnabled;
+            updateToggleDisplay();
+            socket.emit('update_auto_confirm', { enabled: autoConfirmEnabled });
+        });
+
+        function updateToggleDisplay() {
+            if (autoConfirmEnabled) {
+                autoConfirmToggle.classList.add('active');
+            } else {
+                autoConfirmToggle.classList.remove('active');
+            }
+        }
 
         function sendMessage() {
             const message = messageInput.value.trim();
@@ -342,6 +494,59 @@
             messages.appendChild(messageEl);
             messages.scrollTop = messages.scrollHeight;
             hideTyping();
+        }
+
+        function addToolExecution(data) {
+            const toolExecutionEl = document.createElement('div');
+            toolExecutionEl.className = 'tool-execution';
+            toolExecutionEl.id = `tool-execution-${Date.now()}`;
+            
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const languageClass = data.language || 'plaintext';
+            
+            toolExecutionEl.innerHTML = `
+                <div class="tool-execution-header">
+                    🔧 ${data.tool_name.toUpperCase()} Tool Execution
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                ${data.code ? `
+                <div class="tool-execution-code">
+                    <div class="tool-execution-code-header">Code:</div>
+                    <pre><code class="language-${languageClass}">${escapeHtml(data.code)}</code></pre>
+                </div>
+                ` : ''}
+                <div class="tool-execution-result" style="display: none;">
+                    <div class="tool-execution-result-header">Result:</div>
+                    <pre id="result-${toolExecutionEl.id}"></pre>
+                </div>
+            `;
+            
+            messages.appendChild(toolExecutionEl);
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Apply syntax highlighting
+            if (data.code) {
+                hljs.highlightAll();
+            }
+            
+            // Store reference for result update
+            currentToolExecution = toolExecutionEl;
+            hideTyping();
+        }
+
+        function updateToolExecutionResult(data) {
+            if (currentToolExecution) {
+                const resultDiv = currentToolExecution.querySelector('.tool-execution-result');
+                const resultPre = currentToolExecution.querySelector(`#result-${currentToolExecution.id}`);
+                
+                if (resultDiv && resultPre) {
+                    resultDiv.style.display = 'block';
+                    resultPre.textContent = data.result;
+                    messages.scrollTop = messages.scrollHeight;
+                }
+                
+                currentToolExecution = null;
+            }
         }
 
         function addToolConfirmation(data) {
@@ -411,6 +616,16 @@
             sendButton.disabled = false;
         });
 
+        socket.on('session_started', function(data) {
+            // Request current auto-confirm state
+            socket.emit('get_auto_confirm_state');
+        });
+
+        socket.on('auto_confirm_state', function(data) {
+            autoConfirmEnabled = data.enabled;
+            updateToggleDisplay();
+        });
+
         socket.on('disconnect', function() {
             isConnected = false;
             statusText.textContent = 'Disconnected';
@@ -428,6 +643,14 @@
 
         socket.on('error', function(data) {
             addMessage('error', data.message, new Date().toISOString());
+        });
+
+        socket.on('tool_execution_start', function(data) {
+            addToolExecution(data);
+        });
+
+        socket.on('tool_execution_result', function(data) {
+            updateToolExecutionResult(data);
         });
 
         // Initialize
