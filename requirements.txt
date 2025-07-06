@@ -1,0 +1,6 @@
+flask==2.3.3
+flask-socketio==5.3.6
+anthropic
+tenacity
+ipython
+patch

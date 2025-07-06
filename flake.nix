@@ -15,32 +15,25 @@
 
         devshell = pkgs.callPackage ./shell.nix { inherit pkgs; };
 
+        # Create a proper derivation that includes all files
+        agentPackage = promptFile: pkgs.stdenv.mkDerivation {
+          name = "bash-agent";
+          src = ./.;
+          buildInputs = [ pythonEnv ];
+          installPhase = ''
+            mkdir -p $out/bin $out/share/bash-agent
+            cp -r . $out/share/bash-agent/
+            cat > $out/bin/agent << EOF
+            #!${pkgs.bash}/bin/bash
+            cd $out/share/bash-agent
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            EOF
+            chmod +x $out/bin/agent
+          '';
+        };
+
         # Create a script that runs the agent with a specific prompt file
-        agentScript = promptFile: pkgs.writeScriptBin "agent" ''
-          #!${pkgs.bash}/bin/bash
-          # Python packages available in the agent's environment:
-          # numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn
-          exec ${pkgs.python3.withPackages (ps: with ps; [
-            anthropic
-            tenacity
-            matplotlib
-            ipython
-            numpy
-            pandas
-            seaborn
-            scikit-learn
-            ipykernel
-            torch
-            tqdm
-            gymnasium
-            torchvision
-            tensorboard
-            torch-tb-profiler
-            opencv-python
-            nbconvert
-            patch
-          ])}/bin/python3 ${./agent.py} --prompt-file ${promptFile} "$@"
-        '';
+        agentScript = promptFile: agentPackage promptFile;
 
         pythonEnv = pkgs.python3.withPackages (ps: with ps; [
           anthropic
@@ -62,11 +55,14 @@
           nbconvert
           patch
           kubernetes
+          flask
+          flask-socketio
         ]);
 
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
           #!${pkgs.bash}/bin/bash
-          exec ${pythonEnv}/bin/python3  ${./agent.py} --prompt-file ${./prompt.md} "$@"
+          cd ${agentPackage ./prompt.md}/share/bash-agent
+          exec ${pythonEnv}/bin/python3 ${agentPackage ./prompt.md}/share/bash-agent/agent.py --prompt-file ${agentPackage ./prompt.md}/share/bash-agent/prompt.md "$@"
         '';
 
         baseContents = with pkgs; [ 

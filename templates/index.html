@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Agent</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background-color: #0d1117;
+            color: #e6edf3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #7d8590;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #238636;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .terminal-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            color: #79c0ff;
+        }
+
+        .message.agent {
+            color: #e6edf3;
+        }
+
+        .message.system {
+            color: #f85149;
+            font-style: italic;
+        }
+
+        .message.error {
+            color: #f85149;
+            background-color: #161b22;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #f85149;
+        }
+
+        .message-header {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .message-content {
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message-timestamp {
+            font-size: 11px;
+            color: #7d8590;
+            margin-left: 8px;
+        }
+
+        .input-container {
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .input-field {
+            flex: 1;
+            background-color: #0d1117;
+            border: 1px solid #21262d;
+            color: #e6edf3;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-family: inherit;
+            border-radius: 6px;
+            outline: none;
+            resize: none;
+            min-height: 44px;
+            max-height: 200px;
+        }
+
+        .input-field:focus {
+            border-color: #1f6feb;
+            box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.3);
+        }
+
+        .send-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover {
+            background-color: #2ea043;
+        }
+
+        .send-button:disabled {
+            background-color: #21262d;
+            color: #7d8590;
+            cursor: not-allowed;
+        }
+
+        .tool-confirmation {
+            background-color: #161b22;
+            border: 1px solid #f85149;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .tool-confirmation-header {
+            font-weight: 600;
+            color: #f85149;
+            margin-bottom: 8px;
+        }
+
+        .tool-confirmation-content {
+            color: #e6edf3;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .tool-confirmation-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .confirm-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .cancel-button {
+            background-color: #da3633;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .typing-indicator {
+            display: none;
+            color: #7d8590;
+            font-style: italic;
+            margin-bottom: 16px;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        /* Scrollbar styling */
+        .messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #21262d;
+            border-radius: 4px;
+        }
+
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: #30363d;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 8px 16px;
+            }
+            
+            .messages {
+                padding: 16px;
+            }
+            
+            .input-container {
+                padding: 12px 16px;
+            }
+            
+            .send-button {
+                padding: 12px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Claude Code Agent</div>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </div>
+
+    <div class="terminal-container">
+        <div class="messages" id="messages">
+            <!-- Messages will be added here -->
+        </div>
+        
+        <div class="typing-indicator" id="typing-indicator">
+            Agent is typing...
+        </div>
+        
+        <div class="input-container">
+            <textarea 
+                class="input-field" 
+                id="message-input" 
+                placeholder="Type your message here..."
+                rows="1"
+            ></textarea>
+            <button class="send-button" id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const statusText = document.getElementById('status-text');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        let isConnected = false;
+        let isTyping = false;
+
+        // Auto-resize textarea
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+
+        // Send message on Enter (but allow Shift+Enter for new lines)
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', sendMessage);
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && isConnected) {
+                socket.emit('user_message', { message: message });
+                messageInput.value = '';
+                messageInput.style.height = 'auto';
+                showTyping();
+            }
+        }
+
+        function addMessage(type, content, timestamp) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            
+            const time = new Date(timestamp).toLocaleTimeString();
+            const typeLabel = type === 'user' ? 'You' : 
+                            type === 'agent' ? 'Agent' : 
+                            type === 'system' ? 'System' : 'Error';
+            
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    ${typeLabel}
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                <div class="message-content">${escapeHtml(content)}</div>
+            `;
+            
+            messages.appendChild(messageEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function addToolConfirmation(data) {
+            const confirmationEl = document.createElement('div');
+            confirmationEl.className = 'tool-confirmation';
+            confirmationEl.innerHTML = `
+                <div class="tool-confirmation-header">Tool Execution Required</div>
+                <div class="tool-confirmation-content">
+                    <strong>Tool:</strong> ${data.tool_name}<br>
+                    <strong>Input:</strong> ${JSON.stringify(data.tool_input, null, 2)}
+                </div>
+                <div class="tool-confirmation-buttons">
+                    <button class="confirm-button" onclick="confirmTool('${data.tool_call_id}', true, ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                        Execute
+                    </button>
+                    <button class="cancel-button" onclick="confirmTool('${data.tool_call_id}', false)">
+                        Cancel
+                    </button>
+                </div>
+            `;
+            
+            messages.appendChild(confirmationEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function confirmTool(toolCallId, confirmed, toolCall = null) {
+            socket.emit('tool_confirm', {
+                tool_call_id: toolCallId,
+                confirmed: confirmed,
+                tool_call: toolCall
+            });
+            
+            // Remove the confirmation dialog
+            const confirmations = document.querySelectorAll('.tool-confirmation');
+            confirmations.forEach(el => el.remove());
+            
+            if (confirmed) {
+                showTyping();
+            }
+        }
+
+        function showTyping() {
+            if (!isTyping) {
+                isTyping = true;
+                typingIndicator.classList.add('show');
+            }
+        }
+
+        function hideTyping() {
+            if (isTyping) {
+                isTyping = false;
+                typingIndicator.classList.remove('show');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Socket event handlers
+        socket.on('connect', function() {
+            isConnected = true;
+            statusText.textContent = 'Connected';
+            sendButton.disabled = false;
+        });
+
+        socket.on('disconnect', function() {
+            isConnected = false;
+            statusText.textContent = 'Disconnected';
+            sendButton.disabled = true;
+            hideTyping();
+        });
+
+        socket.on('message', function(data) {
+            addMessage(data.type, data.content, data.timestamp);
+        });
+
+        socket.on('tool_confirmation', function(data) {
+            addToolConfirmation(data);
+        });
+
+        socket.on('error', function(data) {
+            addMessage('error', data.message, new Date().toISOString());
+        });
+
+        // Initialize
+        sendButton.disabled = true;
+        messageInput.focus();
+    </script>
+</body>
+</html>
