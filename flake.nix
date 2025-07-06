@@ -32,8 +32,44 @@
           '';
         };
 
+        # Create a proper derivation for bash-agent (legacy)
+        bashAgentPackage = promptFile: pkgs.stdenv.mkDerivation {
+          name = "bash-agent-legacy";
+          src = ./.;
+          buildInputs = [ pythonEnv ];
+          installPhase = ''
+            mkdir -p $out/bin $out/share/bash-agent
+            cp -r . $out/share/bash-agent/
+            cat > $out/bin/bash-agent << EOF
+            #!${pkgs.bash}/bin/bash
+            cd $out/share/bash-agent
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/bash-agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            EOF
+            chmod +x $out/bin/bash-agent
+          '';
+        };
+
+        # Create a proper derivation for webagent (new)
+        webAgentPackage = promptFile: pkgs.stdenv.mkDerivation {
+          name = "web-agent";
+          src = ./.;
+          buildInputs = [ pythonEnv ];
+          installPhase = ''
+            mkdir -p $out/bin $out/share/bash-agent
+            cp -r . $out/share/bash-agent/
+            cat > $out/bin/webagent << EOF
+            #!${pkgs.bash}/bin/bash
+            cd $out/share/bash-agent
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            EOF
+            chmod +x $out/bin/webagent
+          '';
+        };
+
         # Create a script that runs the agent with a specific prompt file
         agentScript = promptFile: agentPackage promptFile;
+        bashAgentScript = promptFile: bashAgentPackage promptFile;
+        webAgentScript = promptFile: webAgentPackage promptFile;
 
         pythonEnv = pkgs.python3.withPackages (ps: with ps; [
           anthropic
@@ -59,10 +95,18 @@
           flask-socketio
         ]);
 
+        # Web agent entrypoint
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
           #!${pkgs.bash}/bin/bash
           cd ${agentPackage ./prompt.md}/share/bash-agent
           exec ${pythonEnv}/bin/python3 ${agentPackage ./prompt.md}/share/bash-agent/agent.py --prompt-file ${agentPackage ./prompt.md}/share/bash-agent/prompt.md "$@"
+        '';
+
+        # Bash agent entrypoint (legacy)
+        bashAgentEntrypoint = pkgs.writeScript "bash-entrypoint.sh" ''
+          #!${pkgs.bash}/bin/bash
+          cd ${bashAgentPackage ./prompt.md}/share/bash-agent
+          exec ${pythonEnv}/bin/python3 ${bashAgentPackage ./prompt.md}/share/bash-agent/bash-agent.py --prompt-file ${bashAgentPackage ./prompt.md}/share/bash-agent/prompt.md "$@"
         '';
 
         baseContents = with pkgs; [ 
@@ -82,15 +126,44 @@
       in
       {
         devShells.default = devshell;
+        
+        # Packages
         packages.default = agentScript ./prompt.md;
+        packages.webAgent = webAgentScript ./prompt.md;
+        packages.bashAgent = bashAgentScript ./prompt.md;
+        
+        # Apps for running with nix run
         apps.default = {
           type = "app";
-          program = "${(agentScript ./prompt.md)}/bin/agent";
+          program = "${(bashAgentScript ./prompt.md)}/bin/bash-agent";
         };
         
-        # Add a streaming layered Docker image output
-        packages.streamLayered = pkgs.dockerTools.streamLayeredImage {
+        apps.webagent = {
+          type = "app";
+          program = "${(webAgentScript ./prompt.md)}/bin/webagent";
+        };
+
+        apps.bashagent = {
+          type = "app";
+          program = "${(bashAgentScript ./prompt.md)}/bin/bash-agent";
+        };
+        
+        # Docker images
+        packages.bashAgentDocker = pkgs.dockerTools.streamLayeredImage {
           name = "bash-agent";
+          tag = "latest";
+          maxLayers = 120;
+          contents = baseContents;
+          config = {
+            Entrypoint = [ "${bashAgentEntrypoint}" ];
+            WorkingDir = "/app";
+            Env = [ "PYTHONUNBUFFERED=1" ];
+          };
+        };
+
+        # New web agent Docker image (using agent.py)
+        packages.webAgentDocker = pkgs.dockerTools.streamLayeredImage {
+          name = "webagent";
           tag = "latest";
           maxLayers = 120;
           contents = baseContents;
@@ -100,8 +173,6 @@
             Env = [ "PYTHONUNBUFFERED=1" ];
           };
         };
-
-
       }
     );
 }
