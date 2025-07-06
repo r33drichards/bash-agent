@@ -320,6 +320,11 @@
             cursor: not-allowed;
         }
 
+        .drag-over {
+            border: 2px dashed #1f6feb !important;
+            background-color: rgba(31, 111, 235, 0.1) !important;
+        }
+
         .tool-confirmation {
             background-color: #161b22;
             border: 1px solid #f85149;
@@ -555,6 +560,8 @@
                 placeholder="Type your message here..."
                 rows="1"
             ></textarea>
+            <input type="file" id="file-input" style="display: none;" multiple>
+            <button class="send-button" id="file-upload-button" style="margin-right: 8px;">📁 Upload</button>
             <button class="send-button" id="send-button">Send</button>
         </div>
     </div>
@@ -564,6 +571,8 @@
         const messages = document.getElementById('messages');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
+        const fileInput = document.getElementById('file-input');
+        const fileUploadButton = document.getElementById('file-upload-button');
         const statusText = document.getElementById('status-text');
         const typingIndicator = document.getElementById('typing-indicator');
         const autoConfirmToggle = document.getElementById('auto-confirm-toggle');
@@ -594,6 +603,39 @@
         });
 
         sendButton.addEventListener('click', sendMessage);
+
+        // File upload functionality
+        fileUploadButton.addEventListener('click', function() {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                uploadFiles(e.target.files);
+            }
+        });
+
+        // Drag and drop functionality
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            document.body.classList.add('drag-over');
+        });
+
+        document.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            if (e.clientX === 0 && e.clientY === 0) {
+                document.body.classList.remove('drag-over');
+            }
+        });
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            document.body.classList.remove('drag-over');
+            
+            if (e.dataTransfer.files.length > 0) {
+                uploadFiles(e.dataTransfer.files);
+            }
+        });
 
         // Auto-confirm toggle
         autoConfirmToggle.addEventListener('click', function() {
@@ -631,6 +673,37 @@
                 messageInput.style.height = 'auto';
                 showTyping();
             }
+        }
+
+        function uploadFiles(files) {
+            if (!isConnected) return;
+            
+            for (const file of files) {
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Show upload progress message
+                addMessage('system', `Uploading file: ${file.name}`, new Date().toISOString());
+                
+                fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        addMessage('system', `✅ File uploaded: ${data.filename}`, new Date().toISOString());
+                    } else {
+                        addMessage('error', `❌ Upload failed: ${data.error}`, new Date().toISOString());
+                    }
+                })
+                .catch(error => {
+                    addMessage('error', `❌ Upload error: ${error.message}`, new Date().toISOString());
+                });
+            }
+            
+            // Clear file input
+            fileInput.value = '';
         }
 
         function addMessage(type, content, timestamp) {

@@ -137,6 +137,40 @@ def get_conversation_history():
     history = load_conversation_history()
     return jsonify(history)
 
+@app.route('/api/upload', methods=['POST'])
+def upload_file():
+    """API endpoint to handle file uploads"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    try:
+        # Save the file to the current working directory
+        filename = file.filename
+        file_path = os.path.join(os.getcwd(), filename)
+        
+        # Check if file already exists and create a unique name if needed
+        counter = 1
+        base_name, ext = os.path.splitext(filename)
+        while os.path.exists(file_path):
+            filename = f"{base_name}_{counter}{ext}"
+            file_path = os.path.join(os.getcwd(), filename)
+            counter += 1
+        
+        file.save(file_path)
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'path': file_path
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @socketio.on('connect')
 def handle_connect():
     session_id = str(uuid.uuid4())
