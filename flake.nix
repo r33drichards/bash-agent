@@ -121,6 +121,7 @@
             openssh
             pkgs.nodejs
             gawk
+            unzip
           ];
 
       in
