@@ -12,8 +12,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - flake: streamLayered
+          - flake: bashAgentDocker
             flake_image: bash-agent
+          - flake: webAgentDocker
+            flake_image: webagent
 
     steps:
       - uses: actions/checkout@v4

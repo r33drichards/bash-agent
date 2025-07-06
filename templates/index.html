@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Agent</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background-color: #0d1117;
+            color: #e6edf3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #7d8590;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-label {
+            font-size: 12px;
+            color: #e6edf3;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background-color: #21262d;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .toggle-switch.active {
+            background-color: #238636;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background-color: #e6edf3;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(20px);
+        }
+
+        .history-button {
+            background-color: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-button:hover {
+            background-color: #30363d;
+        }
+
+        .history-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background-color: #161b22;
+            border-left: 1px solid #21262d;
+            z-index: 1000;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .history-panel.open {
+            right: 0;
+        }
+
+        .history-header {
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+            background-color: #0d1117;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+        }
+
+        .history-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 8px;
+        }
+
+        .history-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: #7d8590;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .history-close:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .history-conversation {
+            padding: 12px 16px;
+            border-bottom: 1px solid #21262d;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-conversation:hover {
+            background-color: #0d1117;
+        }
+
+        .history-conversation-date {
+            font-size: 12px;
+            color: #7d8590;
+            margin-bottom: 4px;
+        }
+
+        .history-conversation-preview {
+            font-size: 13px;
+            color: #e6edf3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .history-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .history-overlay.open {
+            display: block;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #238636;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .terminal-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            color: #79c0ff;
+        }
+
+        .message.agent {
+            color: #e6edf3;
+        }
+
+        .message.system {
+            color: #f85149;
+            font-style: italic;
+        }
+
+        .message.error {
+            color: #f85149;
+            background-color: #161b22;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #f85149;
+        }
+
+        .message-header {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .message-content {
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .message-timestamp {
+            font-size: 11px;
+            color: #7d8590;
+            margin-left: 8px;
+        }
+
+        .input-container {
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .input-field {
+            flex: 1;
+            background-color: #0d1117;
+            border: 1px solid #21262d;
+            color: #e6edf3;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-family: inherit;
+            border-radius: 6px;
+            outline: none;
+            resize: none;
+            min-height: 44px;
+            max-height: 200px;
+        }
+
+        .input-field:focus {
+            border-color: #1f6feb;
+            box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.3);
+        }
+
+        .send-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover {
+            background-color: #2ea043;
+        }
+
+        .send-button:disabled {
+            background-color: #21262d;
+            color: #7d8590;
+            cursor: not-allowed;
+        }
+
+        .tool-confirmation {
+            background-color: #161b22;
+            border: 1px solid #f85149;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .tool-confirmation-header {
+            font-weight: 600;
+            color: #f85149;
+            margin-bottom: 8px;
+        }
+
+        .tool-confirmation-content {
+            color: #e6edf3;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .tool-confirmation-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .confirm-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .cancel-button {
+            background-color: #da3633;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .typing-indicator {
+            display: none;
+            color: #7d8590;
+            font-style: italic;
+            margin-bottom: 16px;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        /* Tool execution styling */
+        .tool-execution {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+
+        .tool-execution-header {
+            background-color: #21262d;
+            padding: 12px 16px;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 14px;
+        }
+
+        .tool-execution-code {
+            background-color: #0d1117;
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .tool-execution-code pre {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        .tool-execution-result {
+            background-color: #0d1117;
+            padding: 16px;
+        }
+
+        .tool-execution-result pre {
+            margin: 0;
+            padding: 12px;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #e6edf3;
+        }
+
+        .tool-execution-result-header {
+            font-weight: 600;
+            color: #79c0ff;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tool-execution-code-header {
+            font-weight: 600;
+            color: #7ee787;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tool-execution-plots {
+            margin-top: 16px;
+        }
+
+        .tool-execution-plots-header {
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .plot-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+            margin-bottom: 12px;
+            background-color: white;
+        }
+
+        /* Highlight.js overrides for dark theme */
+        .hljs {
+            background: transparent !important;
+            color: #e6edf3 !important;
+        }
+
+        /* Scrollbar styling */
+        .messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: #21262d;
+            border-radius: 4px;
+        }
+
+        .messages::-webkit-scrollbar-thumb:hover {
+            background: #30363d;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 8px 16px;
+            }
+            
+            .messages {
+                padding: 16px;
+            }
+            
+            .input-container {
+                padding: 12px 16px;
+            }
+            
+            .send-button {
+                padding: 12px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Claude Code Agent</div>
+        <div class="controls">
+            <button class="history-button" id="history-button">History</button>
+            <div class="toggle-container">
+                <span class="toggle-label">Auto-confirm</span>
+                <div class="toggle-switch" id="auto-confirm-toggle">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            <div class="status">
+                <span class="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="history-overlay" id="history-overlay"></div>
+    <div class="history-panel" id="history-panel">
+        <div class="history-header">
+            <div class="history-title">Conversation History</div>
+            <button class="history-close" id="history-close">×</button>
+        </div>
+        <div class="history-content" id="history-content">
+            <!-- History conversations will be added here -->
+        </div>
+    </div>
+
+    <div class="terminal-container">
+        <div class="messages" id="messages">
+            <!-- Messages will be added here -->
+        </div>
+        
+        <div class="typing-indicator" id="typing-indicator">
+            Agent is typing...
+        </div>
+        
+        <div class="input-container">
+            <textarea 
+                class="input-field" 
+                id="message-input" 
+                placeholder="Type your message here..."
+                rows="1"
+            ></textarea>
+            <button class="send-button" id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const statusText = document.getElementById('status-text');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const autoConfirmToggle = document.getElementById('auto-confirm-toggle');
+        const historyButton = document.getElementById('history-button');
+        const historyPanel = document.getElementById('history-panel');
+        const historyOverlay = document.getElementById('history-overlay');
+        const historyClose = document.getElementById('history-close');
+        const historyContent = document.getElementById('history-content');
+
+        let isConnected = false;
+        let isTyping = false;
+        let autoConfirmEnabled = false;
+        let currentToolExecution = null;
+        let conversationHistory = [];
+
+        // Auto-resize textarea
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+
+        // Send message on Enter (but allow Shift+Enter for new lines)
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', sendMessage);
+
+        // Auto-confirm toggle
+        autoConfirmToggle.addEventListener('click', function() {
+            autoConfirmEnabled = !autoConfirmEnabled;
+            updateToggleDisplay();
+            socket.emit('update_auto_confirm', { enabled: autoConfirmEnabled });
+        });
+
+        // History panel controls
+        historyButton.addEventListener('click', function() {
+            openHistoryPanel();
+        });
+
+        historyClose.addEventListener('click', function() {
+            closeHistoryPanel();
+        });
+
+        historyOverlay.addEventListener('click', function() {
+            closeHistoryPanel();
+        });
+
+        function updateToggleDisplay() {
+            if (autoConfirmEnabled) {
+                autoConfirmToggle.classList.add('active');
+            } else {
+                autoConfirmToggle.classList.remove('active');
+            }
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && isConnected) {
+                socket.emit('user_message', { message: message });
+                messageInput.value = '';
+                messageInput.style.height = 'auto';
+                showTyping();
+            }
+        }
+
+        function addMessage(type, content, timestamp) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            
+            const time = new Date(timestamp).toLocaleTimeString();
+            const typeLabel = type === 'user' ? 'You' : 
+                            type === 'agent' ? 'Agent' : 
+                            type === 'system' ? 'System' : 'Error';
+            
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    ${typeLabel}
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                <div class="message-content">${escapeHtml(content)}</div>
+            `;
+            
+            messages.appendChild(messageEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function addToolExecution(data) {
+            const toolExecutionEl = document.createElement('div');
+            toolExecutionEl.className = 'tool-execution';
+            toolExecutionEl.id = `tool-execution-${Date.now()}`;
+            
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const languageClass = data.language || 'plaintext';
+            
+            toolExecutionEl.innerHTML = `
+                <div class="tool-execution-header">
+                    🔧 ${data.tool_name.toUpperCase()} Tool Execution
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                ${data.code ? `
+                <div class="tool-execution-code">
+                    <div class="tool-execution-code-header">Code:</div>
+                    <pre><code class="language-${languageClass}">${escapeHtml(data.code)}</code></pre>
+                </div>
+                ` : ''}
+                <div class="tool-execution-result" style="display: none;">
+                    <div class="tool-execution-result-header">Result:</div>
+                    <pre id="result-${toolExecutionEl.id}"></pre>
+                </div>
+            `;
+            
+            messages.appendChild(toolExecutionEl);
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Apply syntax highlighting
+            if (data.code) {
+                hljs.highlightAll();
+            }
+            
+            // Store reference for result update
+            currentToolExecution = toolExecutionEl;
+            hideTyping();
+        }
+
+        function updateToolExecutionResult(data) {
+            if (currentToolExecution) {
+                const resultDiv = currentToolExecution.querySelector('.tool-execution-result');
+                const resultPre = currentToolExecution.querySelector(`#result-${currentToolExecution.id}`);
+                
+                if (resultDiv && resultPre) {
+                    resultDiv.style.display = 'block';
+                    resultPre.textContent = data.result;
+                    
+                    // Add plots if available
+                    if (data.plots && data.plots.length > 0) {
+                        const plotsDiv = document.createElement('div');
+                        plotsDiv.className = 'tool-execution-plots';
+                        plotsDiv.innerHTML = `
+                            <div class="tool-execution-plots-header">📊 Generated Plots:</div>
+                        `;
+                        
+                        data.plots.forEach((plotData, index) => {
+                            const plotImg = document.createElement('img');
+                            plotImg.className = 'plot-image';
+                            plotImg.src = `data:image/png;base64,${plotData}`;
+                            plotImg.alt = `Plot ${index + 1}`;
+                            plotsDiv.appendChild(plotImg);
+                        });
+                        
+                        resultDiv.appendChild(plotsDiv);
+                    }
+                    
+                    messages.scrollTop = messages.scrollHeight;
+                }
+                
+                currentToolExecution = null;
+            }
+        }
+
+        function addToolConfirmation(data) {
+            const confirmationEl = document.createElement('div');
+            confirmationEl.className = 'tool-confirmation';
+            confirmationEl.innerHTML = `
+                <div class="tool-confirmation-header">Tool Execution Required</div>
+                <div class="tool-confirmation-content">
+                    <strong>Tool:</strong> ${data.tool_name}<br>
+                    <strong>Input:</strong> ${JSON.stringify(data.tool_input, null, 2)}
+                </div>
+                <div class="tool-confirmation-buttons">
+                    <button class="confirm-button" onclick="confirmTool('${data.tool_call_id}', true, ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                        Execute
+                    </button>
+                    <button class="cancel-button" onclick="confirmTool('${data.tool_call_id}', false)">
+                        Cancel
+                    </button>
+                </div>
+            `;
+            
+            messages.appendChild(confirmationEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function confirmTool(toolCallId, confirmed, toolCall = null) {
+            socket.emit('tool_confirm', {
+                tool_call_id: toolCallId,
+                confirmed: confirmed,
+                tool_call: toolCall
+            });
+            
+            // Remove the confirmation dialog
+            const confirmations = document.querySelectorAll('.tool-confirmation');
+            confirmations.forEach(el => el.remove());
+            
+            if (confirmed) {
+                showTyping();
+            }
+        }
+
+        function showTyping() {
+            if (!isTyping) {
+                isTyping = true;
+                typingIndicator.classList.add('show');
+            }
+        }
+
+        function hideTyping() {
+            if (isTyping) {
+                isTyping = false;
+                typingIndicator.classList.remove('show');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function openHistoryPanel() {
+            loadConversationHistory();
+            historyPanel.classList.add('open');
+            historyOverlay.classList.add('open');
+        }
+
+        function closeHistoryPanel() {
+            historyPanel.classList.remove('open');
+            historyOverlay.classList.remove('open');
+        }
+
+        function loadConversationHistory() {
+            fetch('/api/conversation-history')
+                .then(response => response.json())
+                .then(history => {
+                    displayConversationHistory(history);
+                })
+                .catch(error => {
+                    console.error('Error loading conversation history:', error);
+                });
+        }
+
+        function displayConversationHistory(history) {
+            historyContent.innerHTML = '';
+            
+            if (history.length === 0) {
+                historyContent.innerHTML = '<div style="padding: 20px; text-align: center; color: #7d8590;">No conversation history found</div>';
+                return;
+            }
+
+            history.forEach(conversation => {
+                const conversationEl = document.createElement('div');
+                conversationEl.className = 'history-conversation';
+                
+                const startDate = new Date(conversation.started_at).toLocaleDateString() + ' ' + new Date(conversation.started_at).toLocaleTimeString();
+                const firstMessage = conversation.history.find(msg => msg.type === 'user');
+                const preview = firstMessage ? firstMessage.content.substring(0, 100) + '...' : 'No user messages';
+                
+                conversationEl.innerHTML = `
+                    <div class="history-conversation-date">${startDate}</div>
+                    <div class="history-conversation-preview">${escapeHtml(preview)}</div>
+                `;
+                
+                conversationEl.addEventListener('click', () => {
+                    loadConversationIntoChat(conversation);
+                    closeHistoryPanel();
+                });
+                
+                historyContent.appendChild(conversationEl);
+            });
+        }
+
+        function loadConversationIntoChat(conversation) {
+            // Clear current messages
+            messages.innerHTML = '';
+            
+            // Add messages from conversation history
+            conversation.history.forEach(msg => {
+                addMessage(msg.type, msg.content, msg.timestamp);
+            });
+        }
+
+        // Socket event handlers
+        socket.on('connect', function() {
+            isConnected = true;
+            statusText.textContent = 'Connected';
+            sendButton.disabled = false;
+        });
+
+        socket.on('session_started', function(data) {
+            // Request current auto-confirm state
+            socket.emit('get_auto_confirm_state');
+        });
+
+        socket.on('auto_confirm_state', function(data) {
+            autoConfirmEnabled = data.enabled;
+            updateToggleDisplay();
+        });
+
+        socket.on('disconnect', function() {
+            isConnected = false;
+            statusText.textContent = 'Disconnected';
+            sendButton.disabled = true;
+            hideTyping();
+        });
+
+        socket.on('message', function(data) {
+            addMessage(data.type, data.content, data.timestamp);
+        });
+
+        socket.on('tool_confirmation', function(data) {
+            addToolConfirmation(data);
+        });
+
+        socket.on('error', function(data) {
+            addMessage('error', data.message, new Date().toISOString());
+        });
+
+        socket.on('tool_execution_start', function(data) {
+            addToolExecution(data);
+        });
+
+        socket.on('tool_execution_result', function(data) {
+            updateToolExecutionResult(data);
+        });
+
+        // Initialize
+        sendButton.disabled = true;
+        messageInput.focus();
+    </script>
+</body>
+</html>
