@@ -95,6 +95,114 @@
             transform: translateX(20px);
         }
 
+        .history-button {
+            background-color: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-button:hover {
+            background-color: #30363d;
+        }
+
+        .history-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background-color: #161b22;
+            border-left: 1px solid #21262d;
+            z-index: 1000;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .history-panel.open {
+            right: 0;
+        }
+
+        .history-header {
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+            background-color: #0d1117;
+            position: sticky;
+            top: 0;
+            z-index: 1001;
+        }
+
+        .history-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 8px;
+        }
+
+        .history-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: #7d8590;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .history-close:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .history-conversation {
+            padding: 12px 16px;
+            border-bottom: 1px solid #21262d;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .history-conversation:hover {
+            background-color: #0d1117;
+        }
+
+        .history-conversation-date {
+            font-size: 12px;
+            color: #7d8590;
+            margin-bottom: 4px;
+        }
+
+        .history-conversation-preview {
+            font-size: 13px;
+            color: #e6edf3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .history-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .history-overlay.open {
+            display: block;
+        }
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -406,6 +514,7 @@
     <div class="header">
         <div class="title">Claude Code Agent</div>
         <div class="controls">
+            <button class="history-button" id="history-button">History</button>
             <div class="toggle-container">
                 <span class="toggle-label">Auto-confirm</span>
                 <div class="toggle-switch" id="auto-confirm-toggle">
@@ -416,6 +525,17 @@
                 <span class="status-dot"></span>
                 <span id="status-text">Connecting...</span>
             </div>
+        </div>
+    </div>
+
+    <div class="history-overlay" id="history-overlay"></div>
+    <div class="history-panel" id="history-panel">
+        <div class="history-header">
+            <div class="history-title">Conversation History</div>
+            <button class="history-close" id="history-close">×</button>
+        </div>
+        <div class="history-content" id="history-content">
+            <!-- History conversations will be added here -->
         </div>
     </div>
 
@@ -447,11 +567,17 @@
         const statusText = document.getElementById('status-text');
         const typingIndicator = document.getElementById('typing-indicator');
         const autoConfirmToggle = document.getElementById('auto-confirm-toggle');
+        const historyButton = document.getElementById('history-button');
+        const historyPanel = document.getElementById('history-panel');
+        const historyOverlay = document.getElementById('history-overlay');
+        const historyClose = document.getElementById('history-close');
+        const historyContent = document.getElementById('history-content');
 
         let isConnected = false;
         let isTyping = false;
         let autoConfirmEnabled = false;
         let currentToolExecution = null;
+        let conversationHistory = [];
 
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
@@ -474,6 +600,19 @@
             autoConfirmEnabled = !autoConfirmEnabled;
             updateToggleDisplay();
             socket.emit('update_auto_confirm', { enabled: autoConfirmEnabled });
+        });
+
+        // History panel controls
+        historyButton.addEventListener('click', function() {
+            openHistoryPanel();
+        });
+
+        historyClose.addEventListener('click', function() {
+            closeHistoryPanel();
+        });
+
+        historyOverlay.addEventListener('click', function() {
+            closeHistoryPanel();
         });
 
         function updateToggleDisplay() {
@@ -647,6 +786,68 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function openHistoryPanel() {
+            loadConversationHistory();
+            historyPanel.classList.add('open');
+            historyOverlay.classList.add('open');
+        }
+
+        function closeHistoryPanel() {
+            historyPanel.classList.remove('open');
+            historyOverlay.classList.remove('open');
+        }
+
+        function loadConversationHistory() {
+            fetch('/api/conversation-history')
+                .then(response => response.json())
+                .then(history => {
+                    displayConversationHistory(history);
+                })
+                .catch(error => {
+                    console.error('Error loading conversation history:', error);
+                });
+        }
+
+        function displayConversationHistory(history) {
+            historyContent.innerHTML = '';
+            
+            if (history.length === 0) {
+                historyContent.innerHTML = '<div style="padding: 20px; text-align: center; color: #7d8590;">No conversation history found</div>';
+                return;
+            }
+
+            history.forEach(conversation => {
+                const conversationEl = document.createElement('div');
+                conversationEl.className = 'history-conversation';
+                
+                const startDate = new Date(conversation.started_at).toLocaleDateString() + ' ' + new Date(conversation.started_at).toLocaleTimeString();
+                const firstMessage = conversation.history.find(msg => msg.type === 'user');
+                const preview = firstMessage ? firstMessage.content.substring(0, 100) + '...' : 'No user messages';
+                
+                conversationEl.innerHTML = `
+                    <div class="history-conversation-date">${startDate}</div>
+                    <div class="history-conversation-preview">${escapeHtml(preview)}</div>
+                `;
+                
+                conversationEl.addEventListener('click', () => {
+                    loadConversationIntoChat(conversation);
+                    closeHistoryPanel();
+                });
+                
+                historyContent.appendChild(conversationEl);
+            });
+        }
+
+        function loadConversationIntoChat(conversation) {
+            // Clear current messages
+            messages.innerHTML = '';
+            
+            // Add messages from conversation history
+            conversation.history.forEach(msg => {
+                addMessage(msg.type, msg.content, msg.timestamp);
+            });
         }
 
         // Socket event handlers

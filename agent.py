@@ -29,6 +29,63 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 # Global sessions store
 sessions = {}
 
+def save_conversation_history(session_id):
+    """Save conversation history to JSON file in metadata directory"""
+    if not app.config.get('METADATA_DIR'):
+        return
+    
+    if session_id not in sessions:
+        return
+    
+    history = sessions[session_id]['conversation_history']
+    if not history:
+        return
+    
+    # Create filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"conversation_{session_id[:8]}_{timestamp}.json"
+    filepath = os.path.join(app.config['METADATA_DIR'], filename)
+    
+    # Save conversation data
+    conversation_data = {
+        'session_id': session_id,
+        'started_at': sessions[session_id]['connected_at'].isoformat(),
+        'ended_at': datetime.now().isoformat(),
+        'history': history
+    }
+    
+    try:
+        with open(filepath, 'w') as f:
+            json.dump(conversation_data, f, indent=2)
+        print(f"Conversation history saved to: {filepath}")
+    except Exception as e:
+        print(f"Error saving conversation history: {e}")
+
+def load_conversation_history():
+    """Load all conversation history files from metadata directory"""
+    if not app.config.get('METADATA_DIR'):
+        return []
+    
+    if not os.path.exists(app.config['METADATA_DIR']):
+        return []
+    
+    conversations = []
+    try:
+        for filename in os.listdir(app.config['METADATA_DIR']):
+            if filename.startswith('conversation_') and filename.endswith('.json'):
+                filepath = os.path.join(app.config['METADATA_DIR'], filename)
+                with open(filepath, 'r') as f:
+                    conversation_data = json.load(f)
+                    conversations.append(conversation_data)
+        
+        # Sort by started_at timestamp
+        conversations.sort(key=lambda x: x['started_at'], reverse=True)
+        
+    except Exception as e:
+        print(f"Error loading conversation history: {e}")
+    
+    return conversations
+
 def main():
     parser = argparse.ArgumentParser(description='LLM Agent Web Server')
     parser.add_argument('--prompt-file', type=str, default=None, required=False,
@@ -37,12 +94,14 @@ def main():
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to run the server on')
     parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
     parser.add_argument('--working-dir', type=str, default=None, help='Set the working directory for tool execution')
+    parser.add_argument('--metadata-dir', type=str, default=None, help='Directory to store conversation history and metadata')
     args = parser.parse_args()
     
     # Store global config
     app.config['PROMPT_FILE'] = args.prompt_file
     app.config['AUTO_CONFIRM'] = args.auto_confirm
     app.config['WORKING_DIR'] = args.working_dir
+    app.config['METADATA_DIR'] = args.metadata_dir
     
     # Change working directory if specified
     if args.working_dir:
@@ -52,6 +111,14 @@ def main():
         else:
             print(f"Warning: Working directory {args.working_dir} does not exist")
             return
+    
+    # Create metadata directory if specified
+    if args.metadata_dir:
+        if not os.path.exists(args.metadata_dir):
+            os.makedirs(args.metadata_dir)
+            print(f"Created metadata directory: {args.metadata_dir}")
+        else:
+            print(f"Using existing metadata directory: {args.metadata_dir}")
     
     print(f"\n=== LLM Agent Web Server ===")
     print(f"Starting server on http://{args.host}:{args.port}")
@@ -64,6 +131,12 @@ def main():
 def index():
     return render_template('index.html')
 
+@app.route('/api/conversation-history')
+def get_conversation_history():
+    """API endpoint to get conversation history"""
+    history = load_conversation_history()
+    return jsonify(history)
+
 @socketio.on('connect')
 def handle_connect():
     session_id = str(uuid.uuid4())
@@ -74,7 +147,8 @@ def handle_connect():
     sessions[session_id] = {
         'llm': LLM("claude-3-7-sonnet-latest", app.config['PROMPT_FILE']),
         'auto_confirm': app.config['AUTO_CONFIRM'],
-        'connected_at': datetime.now()
+        'connected_at': datetime.now(),
+        'conversation_history': []
     }
     
     emit('session_started', {'session_id': session_id})
@@ -83,11 +157,18 @@ def handle_connect():
         'content': 'Connected to Claude Code Agent. Type your message to start...',
         'timestamp': datetime.now().isoformat()
     })
+    
+    # Send conversation history if available
+    history = load_conversation_history()
+    if history:
+        emit('conversation_history', history)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     session_id = session.get('session_id')
     if session_id in sessions:
+        # Save conversation history before cleanup
+        save_conversation_history(session_id)
         del sessions[session_id]
     leave_room(session_id)
 
@@ -103,11 +184,15 @@ def handle_user_message(data):
         return
     
     # Echo user message
-    emit('message', {
+    user_message = {
         'type': 'user',
         'content': user_input,
         'timestamp': datetime.now().isoformat()
-    })
+    }
+    emit('message', user_message)
+    
+    # Store in conversation history
+    sessions[session_id]['conversation_history'].append(user_message)
     
     # Process with LLM
     try:
@@ -118,11 +203,15 @@ def handle_user_message(data):
         output, tool_calls = llm(msg)
         
         # Send agent response
-        emit('message', {
+        agent_message = {
             'type': 'agent',
             'content': output,
             'timestamp': datetime.now().isoformat()
-        })
+        }
+        emit('message', agent_message)
+        
+        # Store in conversation history
+        sessions[session_id]['conversation_history'].append(agent_message)
         
         # Handle tool calls
         if tool_calls:
@@ -254,11 +343,15 @@ def execute_tool_call_web(tool_call, session_id):
         output, new_tool_calls = llm([result])
         
         # Send agent response
-        emit('message', {
+        agent_message = {
             'type': 'agent',
             'content': output,
             'timestamp': datetime.now().isoformat()
-        }, room=session_id)
+        }
+        emit('message', agent_message, room=session_id)
+        
+        # Store in conversation history
+        sessions[session_id]['conversation_history'].append(agent_message)
         
         # Handle any new tool calls
         if new_tool_calls:
