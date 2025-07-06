@@ -741,9 +741,23 @@
                     <button class="confirm-button" onclick="confirmTool('${data.tool_call_id}', true, ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
                         Execute
                     </button>
-                    <button class="cancel-button" onclick="confirmTool('${data.tool_call_id}', false)">
+                    <button class="cancel-button" onclick="showRejectionInput('${data.tool_call_id}', ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
                         Cancel
                     </button>
+                </div>
+                <div class="rejection-input" id="rejection-input-${data.tool_call_id}" style="display: none;">
+                    <div style="margin-top: 10px;">
+                        <label>Reason for rejection (optional):</label>
+                        <input type="text" id="rejection-reason-${data.tool_call_id}" placeholder="e.g., Command is too risky, need more context..." style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button class="cancel-button" onclick="submitRejection('${data.tool_call_id}', ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                            Submit Rejection
+                        </button>
+                        <button class="confirm-button" onclick="hideRejectionInput('${data.tool_call_id}')">
+                            Back
+                        </button>
+                    </div>
                 </div>
             `;
             
@@ -766,6 +780,50 @@
             if (confirmed) {
                 showTyping();
             }
+        }
+
+        function showRejectionInput(toolCallId, toolCall) {
+            const rejectionInput = document.getElementById(`rejection-input-${toolCallId}`);
+            const buttons = document.querySelector('.tool-confirmation-buttons');
+            
+            if (rejectionInput && buttons) {
+                rejectionInput.style.display = 'block';
+                buttons.style.display = 'none';
+                
+                // Focus on the input field
+                const reasonInput = document.getElementById(`rejection-reason-${toolCallId}`);
+                if (reasonInput) {
+                    reasonInput.focus();
+                }
+            }
+        }
+
+        function hideRejectionInput(toolCallId) {
+            const rejectionInput = document.getElementById(`rejection-input-${toolCallId}`);
+            const buttons = document.querySelector('.tool-confirmation-buttons');
+            
+            if (rejectionInput && buttons) {
+                rejectionInput.style.display = 'none';
+                buttons.style.display = 'block';
+            }
+        }
+
+        function submitRejection(toolCallId, toolCall) {
+            const reasonInput = document.getElementById(`rejection-reason-${toolCallId}`);
+            const rejectionReason = reasonInput ? reasonInput.value.trim() : '';
+            
+            socket.emit('tool_confirm', {
+                tool_call_id: toolCallId,
+                confirmed: false,
+                tool_call: toolCall,
+                rejection_reason: rejectionReason
+            });
+            
+            // Remove the confirmation dialog
+            const confirmations = document.querySelectorAll('.tool-confirmation');
+            confirmations.forEach(el => el.remove());
+            
+            showTyping();
         }
 
         function showTyping() {

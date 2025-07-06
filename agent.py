@@ -240,12 +240,55 @@ def handle_tool_confirm(data):
         if tool_call:
             execute_tool_call_web(tool_call, session_id)
     else:
-        # Send cancellation message
-        emit('message', {
-            'type': 'system',
-            'content': 'Tool execution cancelled by user.',
-            'timestamp': datetime.now().isoformat()
-        })
+        # Handle tool cancellation with proper tool_result
+        tool_call = data.get('tool_call')
+        rejection_reason = data.get('rejection_reason', '')
+        
+        if tool_call:
+            # Create a tool_result for the cancelled tool
+            cancellation_message = 'Tool execution cancelled by user.'
+            if rejection_reason:
+                cancellation_message += f' Reason: {rejection_reason}'
+            
+            tool_result = {
+                'type': 'tool_result',
+                'tool_use_id': tool_call['id'],
+                'content': [{'type': 'text', 'text': f'Error: {cancellation_message}'}]
+            }
+            
+            # Send cancellation message to user
+            emit('message', {
+                'type': 'system',
+                'content': cancellation_message,
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Send tool_result back to LLM to continue conversation
+            llm = sessions[session_id]['llm']
+            output, new_tool_calls = llm([tool_result])
+            
+            # Send agent response
+            agent_message = {
+                'type': 'agent',
+                'content': output,
+                'timestamp': datetime.now().isoformat()
+            }
+            emit('message', agent_message, room=session_id)
+            
+            # Store in conversation history
+            sessions[session_id]['conversation_history'].append(agent_message)
+            
+            # Handle any new tool calls
+            if new_tool_calls:
+                for new_tool_call in new_tool_calls:
+                    handle_tool_call_web(new_tool_call, session_id, sessions[session_id]['auto_confirm'])
+        else:
+            # Fallback if no tool_call data
+            emit('message', {
+                'type': 'system', 
+                'content': 'Tool execution cancelled by user.',
+                'timestamp': datetime.now().isoformat()
+            })
 
 @socketio.on('update_auto_confirm')
 def handle_update_auto_confirm(data):
