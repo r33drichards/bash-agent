@@ -19,6 +19,7 @@ def main():
     # initial user input
     parser.add_argument('--initial-user-input', type=str, default=None, required=False,
                       help='Initial user input (default: None)')
+    parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
     args = parser.parse_args()
     
     try:
@@ -26,14 +27,15 @@ def main():
         print("Type 'exit' to end the conversation.\n")
         loop(
             LLM("claude-3-7-sonnet-latest", args.prompt_file),
-            args.initial_user_input
+            args.initial_user_input,
+            args.auto_confirm if hasattr(args, 'auto_confirm') else False
         )
     except KeyboardInterrupt:
         print("\n\nExiting. Goodbye!")
     except Exception as e:
         print(f"\n\nAn error occurred: {str(e)}")
 
-def loop(llm, initial_user_input=None):
+def loop(llm, initial_user_input=None, auto_confirm=False):
     if initial_user_input:
         msg = [{"type": "text", "text": initial_user_input}]
     else:
@@ -42,7 +44,7 @@ def loop(llm, initial_user_input=None):
         output, tool_calls = llm(msg)
         print("Agent: ", output)
         if tool_calls:
-            msg = [ handle_tool_call(tc) for tc in tool_calls ]
+            msg = [ handle_tool_call(tc, auto_confirm) for tc in tool_calls ]
         else:
             msg = user_input()
 
@@ -338,11 +340,15 @@ class LLM:
         self.messages.append(assistant_response)
         return output_text, tool_calls
 
-def handle_tool_call(tool_call):
+def handle_tool_call(tool_call, auto_confirm=False):
     if tool_call["name"] == "bash":
         command = tool_call["input"]["command"]
         print(f"\nAbout to execute bash command:\n\n{command}")
-        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if not auto_confirm:
+            confirm = input("Enter to confirm or x to cancel").strip().lower()
+        else:
+            print("[Auto-confirm enabled: proceeding without prompt]")
+            confirm = ""
         if confirm == "x":
             print("Command execution skipped by user.")
             output_text = "Command execution was skipped by user confirmation. Seek user input for next steps"
@@ -368,7 +374,11 @@ def handle_tool_call(tool_call):
             print(f"Full results will be written to: {output_json}")
         if print_result:
             print("Results will also be printed in the context window.")
-        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if not auto_confirm:
+            confirm = input("Enter to confirm or x to cancel").strip().lower()
+        else:
+            print("[Auto-confirm enabled: proceeding without prompt]")
+            confirm = ""
         if confirm == "x":
             print("SQL execution skipped by user.")
             output_text = "SQL execution was skipped by user confirmation. Seek user input for next steps"
@@ -390,7 +400,11 @@ def handle_tool_call(tool_call):
         print(f"\nAbout to execute Python code with IPython:\n\n{code}")
         if print_result:
             print("Result will also be printed in the context window.")
-        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if not auto_confirm:
+            confirm = input("Enter to confirm or x to cancel").strip().lower()
+        else:
+            print("[Auto-confirm enabled: proceeding without prompt]")
+            confirm = ""
         if confirm == "x":
             print("Python execution skipped by user.")
             output_text = "Python execution was skipped by user confirmation. Seek user input for next steps"
@@ -457,7 +471,11 @@ def handle_tool_call(tool_call):
                 os.unlink(preview_path)
             except Exception:
                 pass
-        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if not auto_confirm:
+            confirm = input("Enter to confirm or x to cancel").strip().lower()
+        else:
+            print("[Auto-confirm enabled: proceeding without prompt]")
+            confirm = ""
         if confirm == "x":
             print("Diff application skipped by user.")
             output_text = "Diff application was skipped by user confirmation. Seek user input for next steps"
@@ -479,7 +497,11 @@ def handle_tool_call(tool_call):
         print(f"\nAbout to overwrite {file_path} with new content.")
         print("\n--- Preview of new file content ---\n")
         print(content)
-        confirm = input("Enter to confirm or x to cancel").strip().lower()
+        if not auto_confirm:
+            confirm = input("Enter to confirm or x to cancel").strip().lower()
+        else:
+            print("[Auto-confirm enabled: proceeding without prompt]")
+            confirm = ""
         if confirm == "x":
             print("Overwrite skipped by user.")
             output_text = "Overwrite was skipped by user confirmation. Seek user input for next steps"
