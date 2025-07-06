@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--initial-user-input', type=str, default=None, required=False,
                       help='Initial user input (default: None)')
     parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
+    parser.add_argument('--exit-on-user-input', action='store_true', help='Exit immediately after receiving user input (not initial_user_input)')
     args = parser.parse_args()
     
     try:
@@ -28,18 +29,22 @@ def main():
         loop(
             LLM("claude-3-7-sonnet-latest", args.prompt_file),
             args.initial_user_input,
-            args.auto_confirm if hasattr(args, 'auto_confirm') else False
+            args.auto_confirm if hasattr(args, 'auto_confirm') else False,
+            args.exit_on_user_input if hasattr(args, 'exit_on_user_input') else False
         )
     except KeyboardInterrupt:
         print("\n\nExiting. Goodbye!")
     except Exception as e:
         print(f"\n\nAn error occurred: {str(e)}")
 
-def loop(llm, initial_user_input=None, auto_confirm=False):
+def loop(llm, initial_user_input=None, auto_confirm=False, exit_on_user_input=False):
     if initial_user_input:
         msg = [{"type": "text", "text": initial_user_input}]
     else:
         msg = user_input()
+        if exit_on_user_input:
+            print("\nExiting after user input as requested by --exit-on-user-input flag.")
+            raise SystemExit(0)
     while True:
         output, tool_calls = llm(msg)
         print("Agent: ", output)
