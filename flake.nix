@@ -61,6 +61,7 @@
           opencv-python
           nbconvert
           patch
+          kubernetes
         ]);
 
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
