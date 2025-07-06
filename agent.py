@@ -36,14 +36,26 @@ def main():
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to run the server on')
     parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
+    parser.add_argument('--working-dir', type=str, default=None, help='Set the working directory for tool execution')
     args = parser.parse_args()
     
     # Store global config
     app.config['PROMPT_FILE'] = args.prompt_file
     app.config['AUTO_CONFIRM'] = args.auto_confirm
+    app.config['WORKING_DIR'] = args.working_dir
+    
+    # Change working directory if specified
+    if args.working_dir:
+        if os.path.exists(args.working_dir):
+            os.chdir(args.working_dir)
+            print(f"Working directory changed to: {args.working_dir}")
+        else:
+            print(f"Warning: Working directory {args.working_dir} does not exist")
+            return
     
     print(f"\n=== LLM Agent Web Server ===")
     print(f"Starting server on http://{args.host}:{args.port}")
+    print(f"Working directory: {os.getcwd()}")
     print("Claude Code-like interface available in your browser")
     
     socketio.run(app, host=args.host, port=args.port, debug=True, allow_unsafe_werkzeug=True)
