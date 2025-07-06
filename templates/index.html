@@ -339,6 +339,26 @@
             font-size: 14px;
         }
 
+        .tool-execution-plots {
+            margin-top: 16px;
+        }
+
+        .tool-execution-plots-header {
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .plot-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+            margin-bottom: 12px;
+            background-color: white;
+        }
+
         /* Highlight.js overrides for dark theme */
         .hljs {
             background: transparent !important;
@@ -542,6 +562,26 @@
                 if (resultDiv && resultPre) {
                     resultDiv.style.display = 'block';
                     resultPre.textContent = data.result;
+                    
+                    // Add plots if available
+                    if (data.plots && data.plots.length > 0) {
+                        const plotsDiv = document.createElement('div');
+                        plotsDiv.className = 'tool-execution-plots';
+                        plotsDiv.innerHTML = `
+                            <div class="tool-execution-plots-header">📊 Generated Plots:</div>
+                        `;
+                        
+                        data.plots.forEach((plotData, index) => {
+                            const plotImg = document.createElement('img');
+                            plotImg.className = 'plot-image';
+                            plotImg.src = `data:image/png;base64,${plotData}`;
+                            plotImg.alt = `Plot ${index + 1}`;
+                            plotsDiv.appendChild(plotImg);
+                        });
+                        
+                        resultDiv.appendChild(plotsDiv);
+                    }
+                    
                     messages.scrollTop = messages.scrollHeight;
                 }
                 

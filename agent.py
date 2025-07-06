@@ -228,16 +228,26 @@ def execute_tool_call_web(tool_call, session_id):
         
         # Extract the result content
         result_content = ""
+        plots = []
         if result and 'content' in result and result['content']:
             result_content = result['content'][0]['text'] if result['content'][0]['type'] == 'text' else str(result['content'])
         
+        # Extract plots if available (from IPython execution)
+        if result and 'plots' in result:
+            plots = result['plots']
+        
         # Send detailed execution result
-        emit('tool_execution_result', {
+        result_data = {
             'type': 'tool_result',
             'tool_name': tool_call['name'],
             'result': result_content,
             'timestamp': datetime.now().isoformat()
-        }, room=session_id)
+        }
+        
+        if plots:
+            result_data['plots'] = plots
+            
+        emit('tool_execution_result', result_data, room=session_id)
         
         # Send result back to LLM
         llm = sessions[session_id]['llm']
@@ -286,12 +296,13 @@ def execute_tool_call(tool_call):
     elif tool_call["name"] == "ipython":
         code = tool_call["input"]["code"]
         print_result = tool_call["input"].get("print_result", False)
-        output_text = execute_ipython(code, print_result)
-        return dict(
+        output_text, plots = execute_ipython(code, print_result)
+        result = dict(
             type="tool_result",
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+        return result
     elif tool_call["name"] == "edit_file_diff":
         file_path = tool_call["input"]["file_path"]
         diff = tool_call["input"]["diff"]
@@ -426,6 +437,10 @@ def execute_bash(command):
             text=True,
             timeout=30
         )
+        # encode output so that text doesn't contain [32m      4[39m [38;5;66;03m# Calculate profit metrics[39;00m
+        result.stdout = result.stdout.encode('utf-8').decode('utf-8')
+        result.stderr = result.stderr.encode('utf-8').decode('utf-8')
+        
         return f"STDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}\nEXIT CODE: {result.returncode}"
     except Exception as e:
         return f"Error executing command: {str(e)}"
@@ -467,32 +482,82 @@ def execute_sqlite(db_path, query, output_json=None, print_result=False):
 
 def execute_ipython(code, print_result=False):
     """Execute Python code using IPython and return stdout, stderr, and rich output."""
+    import base64
+    import matplotlib.pyplot as plt
+    import matplotlib
+    
+    # Set matplotlib backend to Agg for non-interactive use
+    matplotlib.use('Agg')
+    
     shell = InteractiveShell.instance()
     output_buffer = io.StringIO()
     error_buffer = io.StringIO()
     rich_output = ""
+    plots = []
+    
     try:
+        # Clear any existing plots
+        plt.close('all')
+        
+        # Execute code with output capture
         with capture_output() as cap:
             with contextlib.redirect_stdout(output_buffer):
                 with contextlib.redirect_stderr(error_buffer):
                     result = shell.run_cell(code, store_history=False)
+        
+        # Capture any matplotlib plots that were created
+        if plt.get_fignums():  # Check if any figures exist
+            for fig_num in plt.get_fignums():
+                fig = plt.figure(fig_num)
+                # Save plot to a BytesIO buffer
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                buf.seek(0)
+                # Convert to base64
+                plot_data = base64.b64encode(buf.read()).decode('utf-8')
+                plots.append(plot_data)
+                buf.close()
+            plt.close('all')  # Clean up
+        
         # Collect outputs
         stdout = output_buffer.getvalue()
         stderr = error_buffer.getvalue()
+        
         # Rich output (display_data, etc.)
         if cap.outputs:
             for out in cap.outputs:
                 if hasattr(out, 'data') and 'text/plain' in out.data:
                     rich_output += out.data['text/plain'] + "\n"
+        
         # If there's a result value, show it
         if result.result is not None:
             rich_output += repr(result.result) + "\n"
-        output_text = f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\nRICH OUTPUT:\n{rich_output}"
+        
+        # Build output with cleaner formatting
+        output_sections = []
+        
+        if stdout.strip():
+            output_sections.append(f"STDOUT:\n{stdout}")
+            
+        if stderr.strip():
+            output_sections.append(f"STDERR:\n{stderr}")
+            
+        if rich_output.strip():
+            output_sections.append(f"OUTPUT:\n{rich_output}")
+            
+        if plots:
+            output_sections.append(f"PLOTS:\n{len(plots)} plot(s) generated")
+            
+        # Join sections with proper spacing
+        output_text = "\n\n".join(output_sections) if output_sections else "No output"
+            
         if print_result:
             print(f"IPython output:\n{output_text}")
-        return output_text
+            
+        return output_text, plots
+        
     except Exception as e:
-        return f"Error executing Python code: {str(e)}"
+        return f"Error executing Python code: {str(e)}", []
 
 def apply_unified_diff(file_path, diff):
     """Apply a unified diff to a file using the python-patch library. Returns a result string."""
