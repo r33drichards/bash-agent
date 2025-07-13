@@ -122,6 +122,8 @@
             pkgs.nodejs
             gawk
             unzip
+            kubectl
+            kubernetes-helm
           ];
 
       in
