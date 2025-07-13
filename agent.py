@@ -5,6 +5,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import uuid
 import threading
 from datetime import datetime
+import time
+import signal
+import tempfile
+import psutil
 
 import anthropic
 from anthropic import RateLimitError, APIError
@@ -185,7 +189,8 @@ def handle_connect():
         'llm': LLM("claude-3-7-sonnet-latest", app.config['PROMPT_FILE']),
         'auto_confirm': app.config['AUTO_CONFIRM'],
         'connected_at': datetime.now(),
-        'conversation_history': []
+        'conversation_history': [],
+        'background_tasks': {}
     }
     
     emit('session_started', {'session_id': session_id})
@@ -204,6 +209,8 @@ def handle_connect():
 def handle_disconnect():
     session_id = session.get('session_id')
     if session_id in sessions:
+        # Clean up background tasks before session cleanup
+        cleanup_background_tasks(session_id)
         # Save conversation history before cleanup
         save_conversation_history(session_id)
         del sessions[session_id]
@@ -494,6 +501,40 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "create_bg_task":
+        command = tool_call["input"]["command"]
+        name = tool_call["input"]["name"]
+        working_dir = tool_call["input"].get("working_dir", None)
+        output_text = create_background_task(command, name, working_dir)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "list_bg_tasks":
+        output_text = list_background_tasks()
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "kill_bg_task":
+        task_id = tool_call["input"]["task_id"]
+        output_text = kill_background_task(task_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "logs_bg_task":
+        task_id = tool_call["input"]["task_id"]
+        lines = tool_call["input"].get("lines", 50)
+        output_text = get_background_task_logs(task_id, lines)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
@@ -599,6 +640,303 @@ overwrite_file_tool = {
         "required": ["file_path", "content"]
     }
 }
+
+# --- Background Task tools ---
+create_bg_task_tool = {
+    "name": "create_bg_task",
+    "description": "Start a non-blocking background shell command that runs continuously. Perfect for starting web servers, daemons, or long-running processes. Returns a task ID for management.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The shell command to run in the background."
+            },
+            "name": {
+                "type": "string",
+                "description": "A descriptive name for the background task."
+            },
+            "working_dir": {
+                "type": "string",
+                "description": "Optional working directory for the command."
+            }
+        },
+        "required": ["command", "name"]
+    }
+}
+
+list_bg_tasks_tool = {
+    "name": "list_bg_tasks",
+    "description": "List all background tasks for the current session with their status, PIDs, and runtime information.",
+    "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+}
+
+kill_bg_task_tool = {
+    "name": "kill_bg_task", 
+    "description": "Stop a running background task by task ID.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "description": "The ID of the background task to stop."
+            }
+        },
+        "required": ["task_id"]
+    }
+}
+
+logs_bg_task_tool = {
+    "name": "logs_bg_task",
+    "description": "Get the output logs from a background task. Shows recent stdout, stderr, and status information.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string", 
+                "description": "The ID of the background task to get logs for."
+            },
+            "lines": {
+                "type": "integer",
+                "description": "Number of recent log lines to show (default: 50)."
+            }
+        },
+        "required": ["task_id"]
+    }
+}
+
+# Global dictionary to store background tasks across all sessions
+background_tasks = {}
+
+def get_current_session_id():
+    """Get the current session ID from Flask session context"""
+    from flask import session as flask_session
+    return flask_session.get('session_id')
+
+def create_background_task(command, name, working_dir=None):
+    """Create and start a background task"""
+    session_id = get_current_session_id()
+    if not session_id or session_id not in sessions:
+        return "Error: No active session found"
+    
+    task_id = str(uuid.uuid4())[:8]
+    
+    try:
+        # Create temporary files for stdout and stderr
+        stdout_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, prefix=f'bg_task_{task_id}_stdout_')
+        stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, prefix=f'bg_task_{task_id}_stderr_')
+        
+        # Start the process
+        cwd = working_dir if working_dir and os.path.exists(working_dir) else os.getcwd()
+        
+        process = subprocess.Popen(
+            ["bash", "-c", command],
+            stdout=stdout_file,
+            stderr=stderr_file,
+            cwd=cwd,
+            preexec_fn=os.setsid  # Create new process group for clean termination
+        )
+        
+        # Store task information
+        task_info = {
+            'id': task_id,
+            'name': name,
+            'command': command,
+            'working_dir': cwd,
+            'process': process,
+            'pid': process.pid,
+            'started_at': datetime.now(),
+            'session_id': session_id,
+            'stdout_file': stdout_file.name,
+            'stderr_file': stderr_file.name,
+            'status': 'running'
+        }
+        
+        background_tasks[task_id] = task_info
+        sessions[session_id]['background_tasks'][task_id] = task_info
+        
+        # Close file handles but keep files for logging
+        stdout_file.close()
+        stderr_file.close()
+        
+        return f"Background task '{name}' started successfully!\nTask ID: {task_id}\nPID: {process.pid}\nCommand: {command}\nWorking directory: {cwd}"
+        
+    except Exception as e:
+        return f"Error starting background task: {str(e)}"
+
+def list_background_tasks():
+    """List all background tasks for the current session"""
+    session_id = get_current_session_id()
+    if not session_id or session_id not in sessions:
+        return "Error: No active session found"
+    
+    session_tasks = sessions[session_id]['background_tasks']
+    
+    if not session_tasks:
+        return "No background tasks running in this session."
+    
+    output_lines = ["Background Tasks:", "=" * 50]
+    
+    for task_id, task in session_tasks.items():
+        # Update task status
+        _update_task_status(task)
+        
+        runtime = datetime.now() - task['started_at']
+        runtime_str = str(runtime).split('.')[0]  # Remove microseconds
+        
+        output_lines.append(f"Task ID: {task_id}")
+        output_lines.append(f"  Name: {task['name']}")
+        output_lines.append(f"  Command: {task['command']}")
+        output_lines.append(f"  Status: {task['status']}")
+        output_lines.append(f"  PID: {task['pid']}")
+        output_lines.append(f"  Runtime: {runtime_str}")
+        output_lines.append(f"  Working Dir: {task['working_dir']}")
+        output_lines.append("")
+    
+    return "\n".join(output_lines)
+
+def kill_background_task(task_id):
+    """Stop a background task"""
+    session_id = get_current_session_id()
+    if not session_id or session_id not in sessions:
+        return "Error: No active session found"
+    
+    if task_id not in sessions[session_id]['background_tasks']:
+        return f"Error: Task {task_id} not found in current session"
+    
+    task = sessions[session_id]['background_tasks'][task_id]
+    
+    try:
+        if task['status'] == 'running':
+            # Try to terminate the process group gracefully
+            try:
+                os.killpg(os.getpgid(task['pid']), signal.SIGTERM)
+                time.sleep(1)  # Give it a moment to terminate gracefully
+                
+                # Check if still running and force kill if needed
+                if task['process'].poll() is None:
+                    os.killpg(os.getpgid(task['pid']), signal.SIGKILL)
+                    
+            except ProcessLookupError:
+                pass  # Process already terminated
+            except Exception as e:
+                return f"Error terminating task {task_id}: {str(e)}"
+        
+        # Update task status
+        _update_task_status(task)
+        task['status'] = 'stopped'
+        task['stopped_at'] = datetime.now()
+        
+        return f"Background task '{task['name']}' (ID: {task_id}) has been stopped."
+        
+    except Exception as e:
+        return f"Error stopping background task: {str(e)}"
+
+def get_background_task_logs(task_id, lines=50):
+    """Get logs from a background task"""
+    session_id = get_current_session_id()
+    if not session_id or session_id not in sessions:
+        return "Error: No active session found"
+    
+    if task_id not in sessions[session_id]['background_tasks']:
+        return f"Error: Task {task_id} not found in current session"
+    
+    task = sessions[session_id]['background_tasks'][task_id]
+    
+    try:
+        # Update task status
+        _update_task_status(task)
+        
+        # Read stdout
+        stdout_content = ""
+        if os.path.exists(task['stdout_file']):
+            with open(task['stdout_file'], 'r') as f:
+                stdout_lines = f.readlines()
+                if len(stdout_lines) > lines:
+                    stdout_lines = stdout_lines[-lines:]
+                stdout_content = ''.join(stdout_lines)
+        
+        # Read stderr  
+        stderr_content = ""
+        if os.path.exists(task['stderr_file']):
+            with open(task['stderr_file'], 'r') as f:
+                stderr_lines = f.readlines()
+                if len(stderr_lines) > lines:
+                    stderr_lines = stderr_lines[-lines:]
+                stderr_content = ''.join(stderr_lines)
+        
+        runtime = datetime.now() - task['started_at']
+        runtime_str = str(runtime).split('.')[0]
+        
+        output = f"Logs for Background Task: {task['name']} (ID: {task_id})\n"
+        output += f"Status: {task['status']}\n"
+        output += f"PID: {task['pid']}\n"
+        output += f"Runtime: {runtime_str}\n"
+        output += f"Command: {task['command']}\n"
+        output += "=" * 60 + "\n"
+        
+        if stdout_content:
+            output += f"STDOUT (last {lines} lines):\n{stdout_content}\n"
+        else:
+            output += "STDOUT: (empty)\n"
+            
+        if stderr_content:
+            output += f"STDERR (last {lines} lines):\n{stderr_content}\n"
+        else:
+            output += "STDERR: (empty)\n"
+        
+        return output
+        
+    except Exception as e:
+        return f"Error reading task logs: {str(e)}"
+
+def _update_task_status(task):
+    """Update the status of a background task"""
+    try:
+        if task['process'].poll() is None:
+            # Process is still running
+            task['status'] = 'running'
+        else:
+            # Process has finished
+            task['status'] = 'completed' if task['process'].returncode == 0 else 'failed'
+            task['exit_code'] = task['process'].returncode
+            if 'stopped_at' not in task:
+                task['stopped_at'] = datetime.now()
+    except Exception:
+        task['status'] = 'unknown'
+
+def cleanup_background_tasks(session_id):
+    """Clean up background tasks when a session ends"""
+    if session_id not in sessions:
+        return
+        
+    session_tasks = sessions[session_id]['background_tasks']
+    
+    for task_id, task in session_tasks.items():
+        try:
+            # Stop running processes
+            if task['status'] == 'running' and task['process'].poll() is None:
+                os.killpg(os.getpgid(task['pid']), signal.SIGTERM)
+                time.sleep(0.5)
+                if task['process'].poll() is None:
+                    os.killpg(os.getpgid(task['pid']), signal.SIGKILL)
+            
+            # Clean up log files
+            for file_path in [task['stdout_file'], task['stderr_file']]:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+                    
+        except Exception as e:
+            print(f"Error cleaning up background task {task_id}: {e}")
+    
+    # Remove from global tasks
+    for task_id in list(session_tasks.keys()):
+        if task_id in background_tasks:
+            del background_tasks[task_id]
 
 def execute_bash(command):
     """Execute a bash command and return a formatted string with the results."""
@@ -734,8 +1072,6 @@ def execute_ipython(code, print_result=False):
 
 def apply_unified_diff(file_path, diff):
     """Apply a unified diff to a file using the python-patch library. Returns a result string."""
-    import tempfile
-    import os
     try:
         import patch
     except ImportError:
@@ -794,7 +1130,7 @@ class LLM:
             "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n"
             + prompt + "\n" + app.config['SYSTEM_PROMPT']
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),

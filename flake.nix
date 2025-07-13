@@ -93,6 +93,7 @@
           kubernetes
           flask
           flask-socketio
+          psutil
         ]);
 
         # Web agent entrypoint
@@ -126,6 +127,7 @@
             kubernetes-helm
             curl 
             wget
+            which
           ];
 
       in

@@ -4,3 +4,4 @@ anthropic
 tenacity
 ipython
 patch
+psutil
