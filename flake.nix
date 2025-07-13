@@ -16,7 +16,7 @@
         devshell = pkgs.callPackage ./shell.nix { inherit pkgs; };
 
         # Create a proper derivation that includes all files
-        agentPackage = promptFile: pkgs.stdenv.mkDerivation {
+        agentPackage = pkgs.stdenv.mkDerivation {
           name = "bash-agent";
           src = ./.;
           buildInputs = [ pythonEnv ];
@@ -26,14 +26,14 @@
             cat > $out/bin/agent << EOF
             #!${pkgs.bash}/bin/bash
             cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py "\$@"
             EOF
             chmod +x $out/bin/agent
           '';
         };
 
         # Create a proper derivation for bash-agent (legacy)
-        bashAgentPackage = promptFile: pkgs.stdenv.mkDerivation {
+        bashAgentPackage = pkgs.stdenv.mkDerivation {
           name = "bash-agent-legacy";
           src = ./.;
           buildInputs = [ pythonEnv ];
@@ -43,7 +43,7 @@
             cat > $out/bin/bash-agent << EOF
             #!${pkgs.bash}/bin/bash
             cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/bash-agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/bash-agent.py "\$@"
             EOF
             chmod +x $out/bin/bash-agent
           '';
@@ -66,10 +66,9 @@
           '';
         };
 
-        # Create a script that runs the agent with a specific prompt file
-        agentScript = promptFile: agentPackage promptFile;
-        bashAgentScript = promptFile: bashAgentPackage promptFile;
-        webAgentScript = promptFile: webAgentPackage;
+        agentScript = agentPackage;
+        bashAgentScript = bashAgentPackage;
+        webAgentScript = webAgentPackage;
 
         pythonEnv = pkgs.python3.withPackages (ps: with ps; [
           anthropic
@@ -99,15 +98,15 @@
         # Web agent entrypoint
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
           #!${pkgs.bash}/bin/bash
-          cd ${agentPackage ./prompt.md}/share/bash-agent
-          exec ${pythonEnv}/bin/python3 ${agentPackage ./prompt.md}/share/bash-agent/agent.py --prompt-file ${agentPackage ./prompt.md}/share/bash-agent/prompt.md "$@"
+          cd ${agentPackage}/share/bash-agent
+          exec ${pythonEnv}/bin/python3 ${agentPackage}/share/bash-agent/agent.py "$@"
         '';
 
         # Bash agent entrypoint (legacy)
         bashAgentEntrypoint = pkgs.writeScript "bash-entrypoint.sh" ''
           #!${pkgs.bash}/bin/bash
-          cd ${bashAgentPackage ./prompt.md}/share/bash-agent
-          exec ${pythonEnv}/bin/python3 ${bashAgentPackage ./prompt.md}/share/bash-agent/bash-agent.py --prompt-file ${bashAgentPackage ./prompt.md}/share/bash-agent/prompt.md "$@"
+          cd ${bashAgentPackage}/share/bash-agent
+          exec ${pythonEnv}/bin/python3 ${bashAgentPackage}/share/bash-agent/bash-agent.py "$@"
         '';
 
         baseContents = with pkgs; [ 
@@ -135,24 +134,24 @@
         devShells.default = devshell;
         
         # Packages
-        packages.default = agentScript ./prompt.md;
-        packages.webAgent = webAgentScript ./prompt.md;
-        packages.bashAgent = bashAgentScript ./prompt.md;
+        packages.default = agentScript;
+        packages.webAgent = webAgentScript;
+        packages.bashAgent = bashAgentScript;
         
         # Apps for running with nix run
         apps.default = {
           type = "app";
-          program = "${(bashAgentScript ./prompt.md)}/bin/bash-agent";
+          program = "${(bashAgentScript)}/bin/bash-agent";
         };
         
         apps.webagent = {
           type = "app";
-          program = "${(webAgentScript ./prompt.md)}/bin/webagent";
+          program = "${(webAgentScript)}/bin/webagent";
         };
 
         apps.bashagent = {
           type = "app";
-          program = "${(bashAgentScript ./prompt.md)}/bin/bash-agent";
+          program = "${(bashAgentScript)}/bin/bash-agent";
         };
         
         # Docker images
