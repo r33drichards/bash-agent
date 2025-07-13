@@ -533,6 +533,14 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "restart_bg_task":
+        task_id = tool_call["input"]["task_id"]
+        output_text = restart_background_task(task_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
@@ -701,6 +709,21 @@ logs_bg_task_tool = {
             "lines": {
                 "type": "integer",
                 "description": "Number of recent log lines to show (default: 50)."
+            }
+        },
+        "required": ["task_id"]
+    }
+}
+
+restart_bg_task_tool = {
+    "name": "restart_bg_task",
+    "description": "Restart a background task by stopping it if running and starting it again with the same configuration.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "task_id": {
+                "type": "string",
+                "description": "The ID of the background task to restart."
             }
         },
         "required": ["task_id"]
@@ -891,6 +914,87 @@ def get_background_task_logs(task_id, lines=50):
         
     except Exception as e:
         return f"Error reading task logs: {str(e)}"
+
+def restart_background_task(task_id):
+    """Restart a background task by stopping it and starting it again"""
+    session_id = get_current_session_id()
+    if not session_id or session_id not in sessions:
+        return "Error: No active session found"
+    
+    if task_id not in sessions[session_id]['background_tasks']:
+        return f"Error: Task {task_id} not found in current session"
+    
+    task = sessions[session_id]['background_tasks'][task_id]
+    
+    try:
+        # Store original task configuration
+        original_command = task['command']
+        original_name = task['name']
+        original_working_dir = task['working_dir']
+        
+        # Stop the task if it's running
+        if task['status'] == 'running':
+            try:
+                # Try to terminate the process group gracefully
+                os.killpg(os.getpgid(task['pid']), signal.SIGTERM)
+                time.sleep(1)  # Give it a moment to terminate gracefully
+                
+                # Check if still running and force kill if needed
+                if task['process'].poll() is None:
+                    os.killpg(os.getpgid(task['pid']), signal.SIGKILL)
+                    
+            except ProcessLookupError:
+                pass  # Process already terminated
+            except Exception as e:
+                return f"Error stopping task {task_id} for restart: {str(e)}"
+        
+        # Clean up old log files
+        try:
+            for file_path in [task['stdout_file'], task['stderr_file']]:
+                if os.path.exists(file_path):
+                    os.unlink(file_path)
+        except Exception:
+            pass  # Continue even if cleanup fails
+        
+        # Create new temporary files for stdout and stderr
+        stdout_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, prefix=f'bg_task_{task_id}_stdout_')
+        stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, prefix=f'bg_task_{task_id}_stderr_')
+        
+        # Start new process
+        cwd = original_working_dir if original_working_dir and os.path.exists(original_working_dir) else os.getcwd()
+        
+        process = subprocess.Popen(
+            ["bash", "-c", original_command],
+            stdout=stdout_file,
+            stderr=stderr_file,
+            cwd=cwd,
+            preexec_fn=os.setsid  # Create new process group for clean termination
+        )
+        
+        # Update task information with new process
+        task.update({
+            'process': process,
+            'pid': process.pid,
+            'started_at': datetime.now(),
+            'stdout_file': stdout_file.name,
+            'stderr_file': stderr_file.name,
+            'status': 'running'
+        })
+        
+        # Remove old timestamps
+        if 'stopped_at' in task:
+            del task['stopped_at']
+        if 'exit_code' in task:
+            del task['exit_code']
+        
+        # Close file handles but keep files for logging
+        stdout_file.close()
+        stderr_file.close()
+        
+        return f"Background task '{original_name}' (ID: {task_id}) restarted successfully!\nNew PID: {process.pid}\nCommand: {original_command}\nWorking directory: {cwd}"
+        
+    except Exception as e:
+        return f"Error restarting background task: {str(e)}"
 
 def _update_task_status(task):
     """Update the status of a background task"""
@@ -1122,7 +1226,7 @@ class LLM:
             "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n" 
             + app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else ""
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
