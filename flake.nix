@@ -134,6 +134,7 @@
             sqlite
             nettools
             ps
+            pgrep
           ];
 
       in
