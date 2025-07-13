@@ -131,6 +131,7 @@
             # Add C++ standard library and GCC runtime
             stdenv.cc.cc.lib
             glibc
+            sqlite
           ];
 
       in
