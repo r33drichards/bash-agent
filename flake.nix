@@ -125,6 +125,7 @@
             curl 
             wget
             which
+            gnused
           ];
 
       in
