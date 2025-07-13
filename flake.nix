@@ -128,6 +128,9 @@
             wget
             which
             gnused
+            # Add C++ standard library and GCC runtime
+            stdenv.cc.cc.lib
+            glibc
           ];
 
       in
@@ -164,7 +167,10 @@
           config = {
             Entrypoint = [ "${bashAgentEntrypoint}" ];
             WorkingDir = "/app";
-            Env = [ "PYTHONUNBUFFERED=1" ];
+            Env = [ 
+              "PYTHONUNBUFFERED=1"
+              "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib"
+            ];
           };
         };
 
@@ -177,7 +183,10 @@
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
-            Env = [ "PYTHONUNBUFFERED=1" ];
+            Env = [ 
+              "PYTHONUNBUFFERED=1"
+              "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib"
+            ];
           };
         };
       }

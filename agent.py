@@ -608,20 +608,49 @@ ipython_tool = {
 }
 
 # --- Edit File tool definitions ---
-# Requires: pip install patch
 edit_file_diff_tool = {
     "name": "edit_file_diff",
-    "description": "Edit a file by applying a unified diff patch. The input should include the file path and the diff string in unified diff format.",
+    "description": """Apply a unified diff patch to a file with robust error handling and validation.
+
+SUPPORTED FORMATS:
+- Standard unified diff format (git diff output)
+- Traditional diff -u format  
+- Both git-style (a/, b/ prefixes) and traditional formats
+
+KEY FEATURES:
+- Built-in parser with detailed error messages
+- Fallback to external python-patch library if available
+- Validates patch format before applying
+- Handles new file creation and existing file modification
+- Fuzzy matching for minor whitespace differences
+- Comprehensive error reporting with line numbers
+
+USAGE GUIDELINES:
+- Use for precise line-by-line edits with context
+- Ideal when you have exact diff output from git or diff tools
+- Ensure patch context matches the current file state
+- For large changes, consider using overwrite_file instead
+- Always include sufficient context lines (3+ recommended)
+
+EXAMPLE DIFF FORMAT:
+```
+--- a/file.py
++++ b/file.py
+@@ -1,3 +1,4 @@
+ def example():
++    print("new line")
+     return True
+```""",
     "input_schema": {
         "type": "object",
         "properties": {
             "file_path": {
                 "type": "string",
-                "description": "Path to the file to edit."
+                "description": "Path to the file to edit. File will be created if it doesn't exist."
             },
             "diff": {
                 "type": "string",
-                "description": "Unified diff string to apply to the file."
+                "description": "Unified diff string in standard format. Must include @@ hunk headers and proper line prefixes (space, +, -)."
             }
         },
         "required": ["file_path", "diff"]
@@ -1173,30 +1202,208 @@ def execute_ipython(code, print_result=False):
         return f"Error executing Python code: {str(e)}", []
 
 def apply_unified_diff(file_path, diff):
-    """Apply a unified diff to a file using the python-patch library. Returns a result string."""
+    """Apply a unified diff to a file with robust parsing and error handling. Returns a result string."""
     try:
-        import patch
-    except ImportError:
-        return "Error: python-patch library not available. Please install it with: pip install patch"
+        # Validate patch format first
+        validation_error = _validate_patch_format(diff)
+        if validation_error:
+            return f"Invalid patch format: {validation_error}"
+        
+        # Try built-in implementation first
+        try:
+            return _apply_patch_builtin(file_path, diff)
+        except Exception as builtin_error:
+            # Fall back to external library if available
+            try:
+                return _apply_patch_external(file_path, diff)
+            except ImportError:
+                return f"Patch application failed: {str(builtin_error)}. Consider installing python-patch library: pip install patch"
+            except Exception as external_error:
+                return f"Both built-in and external patch methods failed. Built-in error: {str(builtin_error)}. External error: {str(external_error)}"
+                
+    except Exception as e:
+        return f"Error applying diff: {str(e)}"
+
+def _validate_patch_format(diff):
+    """Validate unified diff format and return error message if invalid."""
+    import re
+    
+    if not diff.strip():
+        return "Empty patch content"
+    
+    lines = diff.split('\n')
+    hunk_count = 0
+    
+    for i, line in enumerate(lines):
+        # Check for hunk headers
+        if line.startswith('@@'):
+            if not re.match(r'^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@', line):
+                return f"Invalid hunk header format at line {i+1}: {line}"
+            hunk_count += 1
+        # Check line prefixes in hunks
+        elif hunk_count > 0 and line and line[0] not in ' +-\\':
+            return f"Invalid line prefix at line {i+1}: '{line[0]}' (expected ' ', '+', '-', or '\\')"
+    
+    if hunk_count == 0:
+        return "No valid hunks found in patch"
+    
+    return None
+
+def _apply_patch_builtin(file_path, diff):
+    """Built-in patch application with detailed error handling."""
+    # Parse the patch
+    hunks = _parse_unified_diff(diff)
+    if not hunks:
+        raise Exception("No valid hunks parsed from diff")
+    
+    # Read the original file
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                original_lines = f.readlines()
+        else:
+            # Handle new file creation
+            original_lines = []
+    except Exception as e:
+        raise Exception(f"Failed to read file {file_path}: {str(e)}")
+    
+    # Apply each hunk
+    modified_lines = original_lines[:]
+    line_offset = 0  # Track line number changes from previous hunks
+    
+    for hunk in hunks:
+        try:
+            modified_lines, new_offset = _apply_hunk(modified_lines, hunk, line_offset)
+            line_offset += new_offset
+        except Exception as e:
+            raise Exception(f"Failed to apply hunk at line {hunk['old_start']}: {str(e)}")
+    
+    # Write the modified file
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(modified_lines)
+        return f"Successfully applied patch to {file_path} ({len(hunks)} hunk(s))"
+    except Exception as e:
+        raise Exception(f"Failed to write modified file: {str(e)}")
+
+def _parse_unified_diff(diff):
+    """Parse unified diff into structured hunks."""
+    import re
+    
+    lines = diff.split('\n')
+    hunks = []
+    current_hunk = None
+    
+    for line in lines:
+        if line.startswith('@@'):
+            # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+            match = re.match(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
+            if match:
+                if current_hunk:
+                    hunks.append(current_hunk)
+                
+                old_start = int(match.group(1))
+                old_count = int(match.group(2)) if match.group(2) else 1
+                new_start = int(match.group(3)) 
+                new_count = int(match.group(4)) if match.group(4) else 1
+                
+                current_hunk = {
+                    'old_start': old_start,
+                    'old_count': old_count,
+                    'new_start': new_start,
+                    'new_count': new_count,
+                    'lines': []
+                }
+        elif current_hunk is not None:
+            # Add lines to current hunk
+            if line.startswith(' ') or line.startswith('+') or line.startswith('-'):
+                current_hunk['lines'].append(line)
+            elif line.startswith('\\'):
+                # Handle "No newline at end of file"
+                current_hunk['lines'].append(line)
+    
+    if current_hunk:
+        hunks.append(current_hunk)
+    
+    return hunks
+
+def _apply_hunk(lines, hunk, line_offset):
+    """Apply a single hunk to the file lines."""
+    # Adjust for 0-based indexing and previous hunks
+    start_line = hunk['old_start'] - 1 + line_offset
+    
+    # Extract old and new content from hunk
+    old_lines = []
+    new_lines = []
+    
+    for line in hunk['lines']:
+        if line.startswith(' '):
+            # Context line
+            old_lines.append(line[1:] + '\n')
+            new_lines.append(line[1:] + '\n')
+        elif line.startswith('-'):
+            # Removed line
+            old_lines.append(line[1:] + '\n')
+        elif line.startswith('+'):
+            # Added line
+            new_lines.append(line[1:] + '\n')
+        elif line.startswith('\\'):
+            # Handle "No newline at end of file"
+            if old_lines and old_lines[-1].endswith('\n'):
+                old_lines[-1] = old_lines[-1][:-1]
+            if new_lines and new_lines[-1].endswith('\n'):
+                new_lines[-1] = new_lines[-1][:-1]
+    
+    # Validate that old content matches
+    end_line = start_line + len(old_lines)
+    if end_line > len(lines):
+        raise Exception(f"Hunk extends beyond file (line {end_line} > {len(lines)})")
+    
+    actual_old = lines[start_line:end_line]
+    if actual_old != old_lines:
+        # Try fuzzy matching for minor whitespace differences
+        if len(actual_old) == len(old_lines):
+            for i, (actual, expected) in enumerate(zip(actual_old, old_lines)):
+                if actual.strip() != expected.strip():
+                    raise Exception(f"Content mismatch at line {start_line + i + 1}. Expected: {repr(expected.strip())}, Got: {repr(actual.strip())}")
+        else:
+            raise Exception(f"Line count mismatch. Expected {len(old_lines)} lines, got {len(actual_old)}")
+    
+    # Apply the change
+    lines[start_line:end_line] = new_lines
+    
+    # Return modified lines and the offset change for subsequent hunks
+    offset_change = len(new_lines) - len(old_lines)
+    return lines, offset_change
+
+def _apply_patch_external(file_path, diff):
+    """Apply patch using external python-patch library as fallback."""
+    import patch
     
     try:
         # Write the diff to a temporary file
         with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.patch') as tmp_patch:
             tmp_patch.write(diff)
             patch_path = tmp_patch.name
+        
         # Apply the patch
         pset = patch.fromfile(patch_path)
         if not pset:
             os.unlink(patch_path)
-            return "Failed to parse patch file."
+            raise Exception("Failed to parse patch file with external library")
+        
         result = pset.apply()
         os.unlink(patch_path)
+        
         if result:
-            return f"Applied diff to {file_path}."
+            return f"Applied patch to {file_path} using external library"
         else:
-            return f"Failed to apply diff to {file_path}."
+            raise Exception("External library failed to apply patch")
+            
     except Exception as e:
-        return f"Error applying diff: {str(e)}"
+        if 'patch_path' in locals() and os.path.exists(patch_path):
+            os.unlink(patch_path)
+        raise e
 
 def overwrite_file(file_path, content):
     """Overwrite a file with new content."""
@@ -1216,15 +1423,33 @@ class LLM:
         self.model = model
         self.messages = []
         self.system_prompt = (
-            """You are a helpful AI assistant with access to bash and sqlite tools.\n"""
+            """You are a helpful AI assistant with access to bash, sqlite, Python, and file editing tools.\n"""
             "You can help the user by executing commands and interpreting the results.\n"
-            "Be careful with destructive commands and always explain what you're doing.\n"
-            "You have access to the bash tool which allows you to run shell commands, and the sqlite tool which allows you to run SQL queries on SQLite databases.\n"
+            "Be careful with destructive commands and always explain what you're doing.\n\n"
+            
+            "AVAILABLE TOOLS:\n"
+            "- bash: Run shell commands\n"
+            "- sqlite: Execute SQL queries on SQLite databases\n"
+            "- ipython: Execute Python code with rich output support\n"
+            "- edit_file_diff: Apply unified diff patches to files\n"
+            "- overwrite_file: Replace entire file contents\n"
+            "- Background task tools: create_bg_task, list_bg_tasks, kill_bg_task, logs_bg_task, restart_bg_task\n\n"
+            
+            "FILE EDITING GUIDELINES:\n"
+            "- Use edit_file_diff for precise, contextual changes with unified diff format\n"
+            "- Use overwrite_file for complete file replacement or new file creation\n"
+            "- The edit_file_diff tool has robust error handling and supports both git-style and traditional diffs\n"
+            "- Always include sufficient context (3+ lines) in patches for reliable application\n"
+            "- For multiple small changes, consider using separate patches or overwrite_file\n\n"
+            
+            "SQLITE USAGE:\n"
             "For large SELECT queries, you can specify an 'output_json' file path in the sqlite tool input. If you do, write the full result to that file and only print errors or the first record in the response.\n"
-            "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n"
-            "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n\n"
-            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n" 
-            + app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else ""
+            "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n\n"
+            
+            "PYTHON ENVIRONMENT:\n"
+            "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n"
+            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n" 
+            + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
         self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool]
 
