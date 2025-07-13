@@ -95,6 +95,8 @@ def main():
     parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
     parser.add_argument('--working-dir', type=str, default=None, help='Set the working directory for tool execution')
     parser.add_argument('--metadata-dir', type=str, default=None, help='Directory to store conversation history and metadata')
+    # system prompt
+    parser.add_argument('--system-prompt', type=str, default=None, help='System prompt to use for the agent')
     args = parser.parse_args()
     
     # Store global config
@@ -102,6 +104,7 @@ def main():
     app.config['AUTO_CONFIRM'] = args.auto_confirm
     app.config['WORKING_DIR'] = args.working_dir
     app.config['METADATA_DIR'] = args.metadata_dir
+    app.config['SYSTEM_PROMPT'] = args.system_prompt
     
     # Change working directory if specified
     if args.working_dir:
@@ -788,8 +791,8 @@ class LLM:
             "For large SELECT queries, you can specify an 'output_json' file path in the sqlite tool input. If you do, write the full result to that file and only print errors or the first record in the response.\n"
             "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n"
             "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n\n"
-            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n"
-            + prompt
+            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n"
+            + prompt + "\n" + app.config['SYSTEM_PROMPT']
         )
         self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool]
 
