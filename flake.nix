@@ -90,6 +90,8 @@
           nbconvert
           patch
           kubernetes
+          flask
+          flask-socketio
           psutil
         ]);
 
