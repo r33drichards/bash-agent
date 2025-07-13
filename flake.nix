@@ -132,6 +132,8 @@
             stdenv.cc.cc.lib
             glibc
             sqlite
+            nettools
+            ps
           ];
 
       in
