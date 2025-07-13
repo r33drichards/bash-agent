@@ -92,8 +92,7 @@ def load_conversation_history():
 
 def main():
     parser = argparse.ArgumentParser(description='LLM Agent Web Server')
-    parser.add_argument('--prompt-file', type=str, default=None, required=False,
-                      help='Path to the prompt file (default: prompt.md)')
+
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
     parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to run the server on')
     parser.add_argument('--auto-confirm', action='store_true', help='Automatically confirm all actions without prompting')
@@ -104,7 +103,6 @@ def main():
     args = parser.parse_args()
     
     # Store global config
-    app.config['PROMPT_FILE'] = args.prompt_file
     app.config['AUTO_CONFIRM'] = args.auto_confirm
     app.config['WORKING_DIR'] = args.working_dir
     app.config['METADATA_DIR'] = args.metadata_dir
@@ -186,7 +184,7 @@ def handle_connect():
     
     # Initialize session with LLM
     sessions[session_id] = {
-        'llm': LLM("claude-3-7-sonnet-latest", app.config['PROMPT_FILE']),
+        'llm': LLM("claude-3-7-sonnet-latest"),
         'auto_confirm': app.config['AUTO_CONFIRM'],
         'connected_at': datetime.now(),
         'conversation_history': [],
@@ -1107,18 +1105,12 @@ def overwrite_file(file_path, content):
 
 
 class LLM:
-    def __init__(self, model, prompt_file):
+    def __init__(self, model):
         if "ANTHROPIC_API_KEY" not in os.environ:
             raise ValueError("ANTHROPIC_API_KEY environment variable not found.")
         self.client = anthropic.Anthropic()
         self.model = model
         self.messages = []
-        if prompt_file:
-            # read prompt file from provided path
-            with open(prompt_file, 'r') as f:
-                prompt = f.read()
-        else:
-            prompt = ""
         self.system_prompt = (
             """You are a helpful AI assistant with access to bash and sqlite tools.\n"""
             "You can help the user by executing commands and interpreting the results.\n"
@@ -1127,8 +1119,8 @@ class LLM:
             "For large SELECT queries, you can specify an 'output_json' file path in the sqlite tool input. If you do, write the full result to that file and only print errors or the first record in the response.\n"
             "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n"
             "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n\n"
-            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n"
-            + prompt + "\n" + app.config['SYSTEM_PROMPT']
+            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n" 
+            + app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else ""
         )
         self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool]
 

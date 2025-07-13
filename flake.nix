@@ -50,7 +50,7 @@
         };
 
         # Create a proper derivation for webagent (new)
-        webAgentPackage = promptFile: pkgs.stdenv.mkDerivation {
+        webAgentPackage = pkgs.stdenv.mkDerivation {
           name = "web-agent";
           src = ./.;
           buildInputs = [ pythonEnv ];
@@ -60,7 +60,7 @@
             cat > $out/bin/webagent << EOF
             #!${pkgs.bash}/bin/bash
             cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py --prompt-file $out/share/bash-agent/prompt.md "\$@"
+            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py "\$@"
             EOF
             chmod +x $out/bin/webagent
           '';
@@ -69,7 +69,7 @@
         # Create a script that runs the agent with a specific prompt file
         agentScript = promptFile: agentPackage promptFile;
         bashAgentScript = promptFile: bashAgentPackage promptFile;
-        webAgentScript = promptFile: webAgentPackage promptFile;
+        webAgentScript = promptFile: webAgentPackage;
 
         pythonEnv = pkgs.python3.withPackages (ps: with ps; [
           anthropic
