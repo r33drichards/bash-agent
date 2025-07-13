@@ -35,7 +35,7 @@ nix run github:r33drichards/bash-agent
 By default, the agent uses `prompt.md` as the system prompt. You can specify a custom prompt file with the `--prompt-file` flag:
 
 ```sh
-nix run github:r33drichards/bash-agent -- --prompt-file prompt.md
+nix run github:r33drichards/bash-agent
 ```
 
 You can also provide an initial user input to start the conversation:
@@ -48,7 +48,7 @@ Or, if running directly with Python:
 
 ```sh
 export ANTHROPIC_API_KEY=your-anthropic-key
-python agent.py --prompt-file myprompt.md
+python agent.py
 python agent.py --initial-user-input "Create a simple Python script"
 ```
 
@@ -77,7 +77,6 @@ docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
 
 ### Command Line Arguments
 
-- `--prompt-file`: Path to a custom prompt file (default: uses built-in prompt)
 - `--initial-user-input`: Initial user input to start the conversation (default: None)
 
 ### What It Does
