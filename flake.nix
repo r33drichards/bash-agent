@@ -124,6 +124,8 @@
             unzip
             kubectl
             kubernetes-helm
+            curl 
+            wget
           ];
 
       in
