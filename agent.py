@@ -24,6 +24,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from memory import MemoryManager
 from todos import TodoManager
 from github_rag import GitHubRAG
+from monaco_routes import monaco_bp
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +33,7 @@ template_dir = os.path.join(script_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 app.config['SECRET_KEY'] = os.urandom(24)
 socketio = SocketIO(app, cors_allowed_origins="*")
+app.register_blueprint(monaco_bp)
 
 # Global sessions store
 sessions = {}

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monaco Editor - Claude Code Agent</title>
+    <!-- Load Monaco Editor from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background-color: #0d1117;
+            color: #e6edf3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background-color: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .title a {
+            color: #7ee787;
+            text-decoration: none;
+        }
+
+        .title a:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn {
+            background-color: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #30363d;
+        }
+
+        .btn.primary {
+            background-color: #238636;
+            border-color: #2ea043;
+        }
+
+        .btn.primary:hover {
+            background-color: #2ea043;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .file-browser {
+            width: 250px;
+            background-color: #161b22;
+            border-right: 1px solid #21262d;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-browser-header {
+            padding: 12px;
+            font-weight: 600;
+            color: #7d8590;
+            font-size: 12px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-browser-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid #21262d;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-item:hover {
+            background-color: #1f2937;
+        }
+
+        .file-item.selected {
+            background-color: #1f6feb;
+            color: white;
+        }
+
+        .file-item-icon {
+            font-size: 14px;
+            color: #7d8590;
+        }
+
+        .folder-icon::before {
+            content: "📁";
+        }
+
+        .file-icon::before {
+            content: "📄";
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-header {
+            padding: 8px 16px;
+            background-color: #161b22;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .current-file {
+            font-size: 13px;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        .editor-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        #monaco-editor {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .status-bar {
+            height: 25px;
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        .status-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            width: 500px;
+            max-width: 90%;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-header {
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .modal-body {
+            padding: 16px;
+        }
+
+        .modal-footer {
+            padding: 16px;
+            border-top: 1px solid #21262d;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #e6edf3;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-control:focus {
+            border-color: #1f6feb;
+            outline: none;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1001;
+        }
+
+        .toast {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            min-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transform: translateX(120%);
+            transition: transform 0.3s ease;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast-icon {
+            font-size: 18px;
+        }
+
+        .toast-success .toast-icon {
+            color: #2ea043;
+        }
+
+        .toast-error .toast-icon {
+            color: #f85149;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .toast-message {
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">
+            <a href="/">← Back to Agent</a>
+            <span>Monaco Code Editor</span>
+        </div>
+        <div class="controls">
+            <button class="btn" id="new-file-btn">New File</button>
+            <button class="btn" id="refresh-files-btn">Refresh Files</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="file-browser">
+            <div class="file-browser-header">
+                <span>Files</span>
+                <span id="file-loading" style="display: none;"><div class="spinner"></div></span>
+            </div>
+            <div class="file-browser-list" id="file-list">
+                <!-- File list will be dynamically populated -->
+            </div>
+        </div>
+
+        <div class="editor-container">
+            <div class="editor-header">
+                <div class="current-file" id="current-file">No file selected</div>
+                <div class="editor-actions">
+                    <button class="btn primary" id="save-btn" disabled>Save</button>
+                </div>
+            </div>
+            <div id="monaco-editor"></div>
+            <div class="status-bar">
+                <div class="status-left">
+                    <div id="editor-mode">Plain Text</div>
+                </div>
+                <div class="status-right">
+                    <div id="cursor-position">Ln 1, Col 1</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New File Modal -->
+    <div class="modal" id="new-file-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                Create New File
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="new-file-path">File Path:</label>
+                    <input type="text" class="form-control" id="new-file-path" placeholder="Enter file path (e.g., myfile.py)">
+                </div>
+                <div class="form-group">
+                    <label for="new-file-content">Initial Content:</label>
+                    <textarea class="form-control" id="new-file-content" rows="5" placeholder="(Optional) Enter initial content"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="new-file-cancel">Cancel</button>
+                <button class="btn primary" id="new-file-create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container">
+        <!-- Toasts will be dynamically added here -->
+    </div>
+
+    <script>
+        // Initialize variables
+        let editor = null;
+        let currentFilePath = null;
+        let currentFileContent = null;
+        let isEditorDirty = false;
+        let fileList = [];
+
+        // DOM elements
+        const fileListElement = document.getElementById('file-list');
+        const currentFileElement = document.getElementById('current-file');
+        const saveButton = document.getElementById('save-btn');
+        const newFileBtn = document.getElementById('new-file-btn');
+        const refreshFilesBtn = document.getElementById('refresh-files-btn');
+        const fileLoading = document.getElementById('file-loading');
+        const editorModeElement = document.getElementById('editor-mode');
+        const cursorPositionElement = document.getElementById('cursor-position');
+        
+        // Modal elements
+        const newFileModal = document.getElementById('new-file-modal');
+        const newFilePathInput = document.getElementById('new-file-path');
+        const newFileContentInput = document.getElementById('new-file-content');
+        const newFileCreateBtn = document.getElementById('new-file-create');
+        const newFileCancelBtn = document.getElementById('new-file-cancel');
+
+        // Initialize Monaco Editor
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            // Create Monaco editor instance
+            editor = monaco.editor.create(document.getElementById('monaco-editor'), {
+                value: '',
+                language: 'plaintext',
+                theme: 'vs-dark',
+                automaticLayout: true,
+                minimap: {
+                    enabled: true
+                },
+                scrollBeyondLastLine: false,
+                renderLineHighlight: 'all',
+                lineNumbers: 'on',
+                rulers: [],
+                fontSize: 14,
+                fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace"
+            });
+
+            // Add change listener to detect when the editor is dirty
+            editor.onDidChangeModelContent(() => {
+                if (!isEditorDirty && currentFilePath) {
+                    isEditorDirty = true;
+                    saveButton.disabled = false;
+                    currentFileElement.textContent = `${currentFilePath} *`;
+                }
+            });
+
+            // Add cursor position listener
+            editor.onDidChangeCursorPosition((e) => {
+                cursorPositionElement.textContent = `Ln ${e.position.lineNumber}, Col ${e.position.column}`;
+            });
+
+            // Load initial file list
+            loadFileList();
+        });
+
+        // Event listeners
+        saveButton.addEventListener('click', saveCurrentFile);
+        newFileBtn.addEventListener('click', () => {
+            newFileModal.style.display = 'flex';
+            newFilePathInput.focus();
+        });
+        refreshFilesBtn.addEventListener('click', loadFileList);
+        
+        // Modal event listeners
+        newFileCreateBtn.addEventListener('click', createNewFile);
+        newFileCancelBtn.addEventListener('click', () => {
+            newFileModal.style.display = 'none';
+            newFilePathInput.value = '';
+            newFileContentInput.value = '';
+        });
+
+        // Close modal if user clicks outside of it
+        window.addEventListener('click', (e) => {
+            if (e.target === newFileModal) {
+                newFileModal.style.display = 'none';
+            }
+        });
+
+        // Handle file list loading
+        async function loadFileList() {
+            try {
+                fileLoading.style.display = 'block';
+                const response = await fetch('/api/monaco/files');
+                if (!response.ok) {
+                    throw new Error('Failed to load file list');
+                }
+                
+                const data = await response.json();
+                fileList = data.files || [];
+                
+                // Render file list
+                renderFileList();
+                
+                fileLoading.style.display = 'none';
+            } catch (error) {
+                showToast('error', 'Error', error.message);
+                fileLoading.style.display = 'none';
+            }
+        }
+
+        // Render file list in the sidebar
+        function renderFileList() {
+            fileListElement.innerHTML = '';
+            
+            if (fileList.length === 0) {
+                const noFilesElement = document.createElement('div');
+                noFilesElement.className = 'file-item';
+                noFilesElement.textContent = 'No files found';
+                fileListElement.appendChild(noFilesElement);
+                return;
+            }
+            
+            // Sort files: directories first, then alphabetically
+            fileList.sort((a, b) => {
+                if (a.isDirectory !== b.isDirectory) {
+                    return a.isDirectory ? -1 : 1;
+                }
+                return a.name.localeCompare(b.name);
+            });
+            
+            fileList.forEach(file => {
+                const fileElement = document.createElement('div');
+                fileElement.className = 'file-item';
+                
+                const iconElement = document.createElement('span');
+                iconElement.className = file.isDirectory ? 'file-item-icon folder-icon' : 'file-item-icon file-icon';
+                
+                const nameElement = document.createElement('span');
+                nameElement.textContent = file.name;
+                
+                fileElement.appendChild(iconElement);
+                fileElement.appendChild(nameElement);
+                
+                // If it's a file, make it clickable
+                if (!file.isDirectory) {
+                    fileElement.addEventListener('click', () => {
+                        // Check if there are unsaved changes
+                        if (isEditorDirty && currentFilePath) {
+                            if (confirm('You have unsaved changes. Do you want to discard them?')) {
+                                openFile(file.path);
+                            }
+                        } else {
+                            openFile(file.path);
+                        }
+                    });
+                }
+                
+                fileListElement.appendChild(fileElement);
+            });
+        }
+
+        // Open a file in the editor
+        async function openFile(filePath) {
+            try {
+                // Show loading state
+                currentFileElement.innerHTML = `${filePath} <div class="spinner"></div>`;
+                
+                const response = await fetch(`/api/monaco/file?path=${encodeURIComponent(filePath)}`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load file');
+                }
+                
+                const data = await response.json();
+                currentFilePath = filePath;
+                currentFileContent = data.content;
+                isEditorDirty = false;
+                
+                // Update editor content
+                editor.setValue(data.content);
+                
+                // Determine language from file extension
+                const fileExtension = filePath.split('.').pop();
+                const language = getLanguageFromExtension(fileExtension);
+                monaco.editor.setModelLanguage(editor.getModel(), language);
+                editorModeElement.textContent = getLanguageDisplayName(language);
+                
+                // Update UI
+                currentFileElement.textContent = filePath;
+                saveButton.disabled = true;
+                
+                // Highlight current file in the file list
+                const fileItems = document.querySelectorAll('.file-item');
+                fileItems.forEach(item => {
+                    item.classList.remove('selected');
+                    if (item.querySelector('span:last-child').textContent === filePath.split('/').pop()) {
+                        item.classList.add('selected');
+                    }
+                });
+                
+            } catch (error) {
+                showToast('error', 'Error', error.message);
+                currentFileElement.textContent = 'Error loading file';
+            }
+        }
+
+        // Save the current file
+        async function saveCurrentFile() {
+            if (!currentFilePath) return;
+            
+            try {
+                const content = editor.getValue();
+                
+                // Show loading state
+                saveButton.innerHTML = '<div class="spinner"></div>';
+                saveButton.disabled = true;
+                
+                const response = await fetch('/api/monaco/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        path: currentFilePath,
+                        content: content
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to save file');
+                }
+                
+                // Update state
+                currentFileContent = content;
+                isEditorDirty = false;
+                
+                // Update UI
+                currentFileElement.textContent = currentFilePath;
+                saveButton.textContent = 'Save';
+                saveButton.disabled = true;
+                
+                showToast('success', 'Saved', `File ${currentFilePath} saved successfully`);
+                
+            } catch (error) {
+                showToast('error', 'Error Saving', error.message);
+                saveButton.textContent = 'Save';
+                saveButton.disabled = false;
+            }
+        }
+
+        // Create a new file
+        async function createNewFile() {
+            const filePath = newFilePathInput.value.trim();
+            const content = newFileContentInput.value;
+            
+            if (!filePath) {
+                showToast('error', 'Error', 'File path is required');
+                return;
+            }
+            
+            try {
+                newFileCreateBtn.innerHTML = '<div class="spinner"></div>';
+                newFileCreateBtn.disabled = true;
+                
+                const response = await fetch('/api/monaco/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        path: filePath,
+                        content: content
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to create file');
+                }
+                
+                // Close the modal and reset fields
+                newFileModal.style.display = 'none';
+                newFilePathInput.value = '';
+                newFileContentInput.value = '';
+                
+                // Refresh file list and open the new file
+                await loadFileList();
+                openFile(filePath);
+                
+                showToast('success', 'Created', `File ${filePath} created successfully`);
+                
+            } catch (error) {
+                showToast('error', 'Error Creating File', error.message);
+            } finally {
+                newFileCreateBtn.textContent = 'Create';
+                newFileCreateBtn.disabled = false;
+            }
+        }
+
+        // Show toast notification
+        function showToast(type, title, message) {
+            const toastContainer = document.getElementById('toast-container');
+            
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            
+            toast.innerHTML = `
+                <div class="toast-icon">${type === 'success' ? '✓' : '⚠'}</div>
+                <div class="toast-content">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // Trigger animation after a small delay
+            setTimeout(() => {
+                toast.classList.add('show');
+            }, 10);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    toastContainer.removeChild(toast);
+                }, 300); // Wait for transition to complete
+            }, 5000);
+        }
+
+        // Get language from file extension
+        function getLanguageFromExtension(extension) {
+            const languageMap = {
+                'js': 'javascript',
+                'ts': 'typescript',
+                'html': 'html',
+                'css': 'css',
+                'json': 'json',
+                'py': 'python',
+                'md': 'markdown',
+                'txt': 'plaintext',
+                'sh': 'shell',
+                'bash': 'shell',
+                'cpp': 'cpp',
+                'c': 'c',
+                'h': 'cpp',
+                'hpp': 'cpp',
+                'cs': 'csharp',
+                'java': 'java',
+                'go': 'go',
+                'rs': 'rust',
+                'php': 'php',
+                'sql': 'sql',
+                'xml': 'xml',
+                'yaml': 'yaml',
+                'yml': 'yaml'
+                // Add more mappings as needed
+            };
+            
+            return languageMap[extension] || 'plaintext';
+        }
+
+        // Get display name for language
+        function getLanguageDisplayName(language) {
+            const displayNames = {
+                'javascript': 'JavaScript',
+                'typescript': 'TypeScript',
+                'html': 'HTML',
+                'css': 'CSS',
+                'json': 'JSON',
+                'python': 'Python',
+                'markdown': 'Markdown',
+                'plaintext': 'Plain Text',
+                'shell': 'Shell Script',
+                'cpp': 'C++',
+                'c': 'C',
+                'csharp': 'C#',
+                'java': 'Java',
+                'go': 'Go',
+                'rust': 'Rust',
+                'php': 'PHP',
+                'sql': 'SQL',
+                'xml': 'XML',
+                'yaml': 'YAML'
+                // Add more mappings as needed
+            };
+            
+            return displayNames[language] || language.charAt(0).toUpperCase() + language.slice(1);
+        }
+    </script>
+</body>
+</html>
