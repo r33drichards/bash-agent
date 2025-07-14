@@ -5,13 +5,10 @@
   # inputs.unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
-
   outputs = { self, nixpkgs, flake-utils, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-        };
+        pkgs = import nixpkgs { inherit system; };
 
         devshell = pkgs.callPackage ./shell.nix { inherit pkgs; };
 
@@ -70,30 +67,31 @@
         bashAgentScript = bashAgentPackage;
         webAgentScript = webAgentPackage;
 
-        pythonEnv = pkgs.python3.withPackages (ps: with ps; [
-          anthropic
-          tenacity
-          matplotlib
-          ipython
-          numpy
-          pandas
-          seaborn
-          scikit-learn
-          ipykernel
-          torch
-          tqdm
-          gymnasium
-          torchvision
-          tensorboard
-          torch-tb-profiler
-          opencv-python
-          nbconvert
-          patch
-          kubernetes
-          flask
-          flask-socketio
-          psutil
-        ]);
+        pythonEnv = pkgs.python3.withPackages (ps:
+          with ps; [
+            anthropic
+            tenacity
+            matplotlib
+            ipython
+            numpy
+            pandas
+            seaborn
+            scikit-learn
+            ipykernel
+            torch
+            tqdm
+            gymnasium
+            torchvision
+            tensorboard
+            torch-tb-profiler
+            opencv-python
+            nbconvert
+            patch
+            kubernetes
+            flask
+            flask-socketio
+            psutil
+          ]);
 
         # Web agent entrypoint
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
@@ -109,48 +107,47 @@
           exec ${pythonEnv}/bin/python3 ${bashAgentPackage}/share/bash-agent/bash-agent.py "$@"
         '';
 
-        baseContents = with pkgs; [ 
-            pythonEnv
-            bash 
-            coreutils 
-            findutils 
-            git 
-            nix 
-            gnugrep 
-            gnutar
-            openssh
-            pkgs.nodejs
-            gawk
-            unzip
-            kubectl
-            kubernetes-helm
-            curl 
-            wget
-            which
-            gnused
-            # Add C++ standard library and GCC runtime
-            stdenv.cc.cc.lib
-            glibc
-            sqlite
-            nettools
-            procps
-          ];
+        baseContents = with pkgs; [
+          pythonEnv
+          bash
+          coreutils
+          findutils
+          git
+          nix
+          gnugrep
+          gnutar
+          openssh
+          pkgs.nodejs
+          gawk
+          unzip
+          kubectl
+          kubernetes-helm
+          curl
+          wget
+          which
+          gnused
+          # Add C++ standard library and GCC runtime
+          stdenv.cc.cc.lib
+          glibc
+          sqlite
+          nettools
+          procps
+        ];
 
-      in
-      {
+      in {
         devShells.default = devshell;
-        
+
         # Packages
         packages.default = agentScript;
         packages.webAgent = webAgentScript;
         packages.bashAgent = bashAgentScript;
-        
+
         # Apps for running with nix run
         apps.default = {
           type = "app";
           program = "${(bashAgentScript)}/bin/bash-agent";
         };
-        
+
         apps.webagent = {
           type = "app";
           program = "${(webAgentScript)}/bin/webagent";
@@ -160,7 +157,7 @@
           type = "app";
           program = "${(bashAgentScript)}/bin/bash-agent";
         };
-        
+
         # Docker images
         packages.bashAgentDocker = pkgs.dockerTools.streamLayeredImage {
           name = "bash-agent";
@@ -170,7 +167,7 @@
           config = {
             Entrypoint = [ "${bashAgentEntrypoint}" ];
             WorkingDir = "/app";
-            Env = [ 
+            Env = [
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib"
             ];
@@ -184,16 +181,15 @@
           maxLayers = 120;
           contents = baseContents;
           config = {
-            config.Env = [ "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt" ];
             contents = [ pkgs.cacert ];
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
-            Env = [ 
+            Env = [
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.glibc}/lib"
+              "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
             ];
           };
         };
-      }
-    );
+      });
 }
