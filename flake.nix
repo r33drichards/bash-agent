@@ -185,6 +185,8 @@
           maxLayers = 120;
           contents = baseContents;
           config = {
+            config.Env = [ "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt" ];
+            contents = [ pkgs.cacert ];
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
             Env = [ 
