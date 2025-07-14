@@ -2377,6 +2377,10 @@ class LLM:
             "- github_rag_query: Ask questions about indexed repositories with citations\n"
             "- github_rag_list: List all indexed repositories and their collection names\n"
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
+            
+            "when you are asked to do something, you should first check the memory for relevant information, and if you don't find it, you should use the tools to get the information you need."
+            "after searching memory and rag, create a plan and add it to your todos."
+            "if you find a problem along the, update your todos to track the problem, but make sure you stay on the overall goal."
         )
         
         # Add RAG repository information if available
