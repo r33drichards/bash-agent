@@ -91,6 +91,11 @@
             flask
             flask-socketio
             psutil
+            chromadb
+            langchain
+            langchain-openai
+            langchainhub
+            langchain-chroma
           ]);
 
         # Web agent entrypoint
@@ -133,6 +138,11 @@
           nettools
           procps
           cacert
+
+          chromadb 
+          langchain-community 
+          langchain-core 
+          langchain
         ];
 
       in {

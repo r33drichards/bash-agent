@@ -14,39 +14,12 @@ import json
 
 logger = logging.getLogger(__name__)
 
-# Check and install required packages
-def ensure_dependencies():
-    """Ensure required packages are installed."""
-    try:
-        import chromadb
-        from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-        from langchain.text_splitter import RecursiveCharacterTextSplitter
-        from langchain_chroma import Chroma
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.runnables import RunnablePassthrough
-        from langchain_core.documents import Document
-        from langchain_core.prompts import ChatPromptTemplate
-        return True
-    except ImportError:
-        logger.info("Installing required RAG packages...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", 
-                                  "langchain", "langchain-openai", "chromadb", 
-                                  "langchainhub", "langchain-chroma"])
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to install dependencies: {e}")
-            return False
-
 class GitHubRAG:
     """GitHub Repository RAG (Retrieval Augmented Generation) system."""
     
     def __init__(self, openai_api_key: str, persist_directory: str = "./rag_storage"):
         """Initialize the GitHub RAG system."""
-        if not ensure_dependencies():
-            raise RuntimeError("Failed to install required dependencies")
-            
-        # Import after ensuring dependencies
+        # Remove ensure_dependencies logic
         from langchain_openai import OpenAIEmbeddings, ChatOpenAI
         from langchain_chroma import Chroma
         
