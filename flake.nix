@@ -168,6 +168,7 @@
           config = {
             Entrypoint = [ "${bashAgentEntrypoint}" ];
             WorkingDir = "/app";
+            User = "1000:1000";
             Env = [
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
@@ -188,6 +189,7 @@
           config = {
             Entrypoint = [ "${agentEntrypoint}" ];
             WorkingDir = "/app";
+            User = "1000:1000";
             Env = [
               "PYTHONUNBUFFERED=1"
               "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
