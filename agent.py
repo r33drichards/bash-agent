@@ -547,6 +547,20 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "search_files":
+        pattern = tool_call["input"]["pattern"]
+        path = tool_call["input"]["path"]
+        file_extensions = tool_call["input"].get("file_extensions")
+        ignore_dirs = tool_call["input"].get("ignore_dirs")
+        case_sensitive = tool_call["input"].get("case_sensitive", False)
+        regex = tool_call["input"].get("regex", False)
+        max_results = tool_call["input"].get("max_results", 100)
+        output_text = search_files(pattern, path, file_extensions, ignore_dirs, case_sensitive, regex, max_results)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     elif tool_call["name"] == "save_memory":
         title = tool_call["input"]["title"]
         content = tool_call["input"]["content"]
@@ -849,6 +863,47 @@ read_file_tool = {
             }
         },
         "required": ["file_path"]
+    }
+}
+
+search_files_tool = {
+    "name": "search_files",
+    "description": "Search for text patterns across files with line numbers for easy reference. Can search individual files or recursively across directories. Supports regex patterns and various file filters.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Text pattern or regex to search for"
+            },
+            "path": {
+                "type": "string",
+                "description": "File path or directory to search in. If a directory, searches recursively."
+            },
+            "file_extensions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of file extensions to include (e.g., ['py', 'js', 'txt']). If not specified, searches all text files."
+            },
+            "ignore_dirs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of directories to ignore (e.g., ['node_modules', '.git', '__pycache__'])"
+            },
+            "case_sensitive": {
+                "type": "boolean",
+                "description": "Whether search should be case sensitive (default: false)"
+            },
+            "regex": {
+                "type": "boolean",
+                "description": "Whether pattern should be treated as regex (default: false)"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of matches to return (default: 100)"
+            }
+        },
+        "required": ["pattern", "path"]
     }
 }
 
@@ -1676,6 +1731,125 @@ def read_file(file_path):
     except Exception as e:
         return f"Error reading file {file_path}: {str(e)}"
 
+def search_files(pattern, path, file_extensions=None, ignore_dirs=None, case_sensitive=False, regex=False, max_results=100):
+    """Search for text patterns across files with line numbers."""
+    import re
+    
+    # Default ignore directories
+    default_ignore_dirs = {'.git', '__pycache__', 'node_modules', '.svn', '.hg', 'venv', 'env', 'build', 'dist', '.tox'}
+    ignore_dirs = set(ignore_dirs or []) | default_ignore_dirs
+    
+    # Prepare pattern
+    if regex:
+        try:
+            pattern_obj = re.compile(pattern, re.IGNORECASE if not case_sensitive else 0)
+        except re.error as e:
+            return f"Error: Invalid regex pattern '{pattern}': {str(e)}"
+    else:
+        # Escape special regex characters for literal search
+        escaped_pattern = re.escape(pattern)
+        pattern_obj = re.compile(escaped_pattern, re.IGNORECASE if not case_sensitive else 0)
+    
+    matches = []
+    files_searched = 0
+    
+    def should_include_file(filepath):
+        """Check if file should be included based on extensions."""
+        if not file_extensions:
+            return True
+        file_ext = os.path.splitext(filepath)[1].lstrip('.')
+        return file_ext in file_extensions
+    
+    def is_text_file(filepath):
+        """Basic check if file is likely a text file."""
+        try:
+            with open(filepath, 'rb') as f:
+                chunk = f.read(1024)
+                return b'\x00' not in chunk  # Binary files often contain null bytes
+        except:
+            return False
+    
+    def search_file(filepath):
+        """Search within a single file."""
+        nonlocal files_searched
+        try:
+            if not should_include_file(filepath) or not is_text_file(filepath):
+                return []
+            
+            files_searched += 1
+            file_matches = []
+            
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                for line_num, line in enumerate(f, 1):
+                    line_content = line.rstrip('\n\r')
+                    if pattern_obj.search(line_content):
+                        file_matches.append({
+                            'file': filepath,
+                            'line_num': line_num,
+                            'line_content': line_content,
+                            'match': pattern_obj.search(line_content).group(0)
+                        })
+                        
+                        if len(matches) + len(file_matches) >= max_results:
+                            break
+            
+            return file_matches
+            
+        except Exception as e:
+            return [{'file': filepath, 'error': str(e)}]
+    
+    try:
+        if os.path.isfile(path):
+            # Search single file
+            matches = search_file(path)
+        elif os.path.isdir(path):
+            # Search directory recursively
+            for root, dirs, files in os.walk(path):
+                # Remove ignored directories from dirs list to prevent walking into them
+                dirs[:] = [d for d in dirs if d not in ignore_dirs]
+                
+                for file in files:
+                    filepath = os.path.join(root, file)
+                    file_matches = search_file(filepath)
+                    matches.extend(file_matches)
+                    
+                    if len(matches) >= max_results:
+                        break
+                
+                if len(matches) >= max_results:
+                    break
+        else:
+            return f"Error: Path '{path}' does not exist"
+        
+        # Format results
+        if not matches:
+            search_type = "file" if os.path.isfile(path) else "directory"
+            return f"No matches found for pattern '{pattern}' in {search_type} '{path}' (searched {files_searched} files)"
+        
+        result_lines = [f"Search results for pattern '{pattern}' in '{path}':"]
+        result_lines.append(f"Found {len(matches)} matches in {files_searched} files searched")
+        result_lines.append("")
+        
+        current_file = None
+        for match in matches[:max_results]:
+            if 'error' in match:
+                result_lines.append(f"Error in {match['file']}: {match['error']}")
+                continue
+                
+            if match['file'] != current_file:
+                current_file = match['file']
+                result_lines.append(f"=== {current_file} ===")
+            
+            result_lines.append(f"{match['line_num']:4d}→{match['line_content']}")
+        
+        if len(matches) >= max_results:
+            result_lines.append(f"\n... (truncated at {max_results} results)")
+        
+        return "\n".join(result_lines)
+        
+    except Exception as e:
+        return f"Error searching files: {str(e)}"
+
 def get_current_memory_manager():
     """Get the memory manager for the current session."""
     from flask import session as flask_session
@@ -2147,6 +2321,7 @@ class LLM:
             "- edit_file_diff: Apply unified diff patches to files\n"
             "- overwrite_file: Replace entire file contents\n"
             "- read_file: Read file contents with line numbers\n"
+            "- search_files: Search for text patterns across files with line numbers (supports regex, file filters, recursive directory search)\n"
             "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n"
             "- Todo/Task tools: create_todo, update_todo, list_todos, get_kanban_board, search_todos, get_todo, delete_todo, get_todo_stats\n\n"
             
@@ -2192,7 +2367,7 @@ class LLM:
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
