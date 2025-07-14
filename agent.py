@@ -1887,6 +1887,9 @@ def search_memory(query=None, tags=None, limit=10):
             result_lines.append("---")
         
         return "\n".join(result_lines)
+    except ValueError as e:
+        # Return the error as a tool result so the agent can recover
+        return f"Error: {str(e)}"
     except Exception as e:
         return f"Error searching memories: {str(e)}"
 
@@ -2090,6 +2093,9 @@ def search_todos(query, include_completed=False):
                 result_lines.append(f"   Description: {desc_preview}")
             
         return "\n".join(result_lines)
+    except ValueError as e:
+        # Return the error as a tool result so the agent can recover
+        return f"Error: {str(e)}"
     except Exception as e:
         return f"Error searching todos: {str(e)}"
 

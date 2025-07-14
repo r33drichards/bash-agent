@@ -223,8 +223,8 @@ class TodoManager:
     def search_todos(self, query: str, include_completed: bool = False) -> List[Dict[str, Any]]:
         """Search todos by title or description."""
         # Validate query length and complexity
-        if len(query) > 1000:
-            raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 1000 characters.")
+        if len(query) > 5000:
+            raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 5000 characters.")
         
         where_conditions = ["(title LIKE ? OR description LIKE ?)"]
         params = [f"%{query}%", f"%{query}%"]
