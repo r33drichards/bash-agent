@@ -55,6 +55,127 @@
             gap: 16px;
         }
 
+        /* Token Counter Casino Style */
+        .token-counter {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            border: 2px solid #ffd700;
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .token-counter::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e, #ffd700, #ffed4e);
+            border-radius: 12px;
+            z-index: -1;
+            animation: golden-glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes golden-glow {
+            0% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
+            100% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.8); }
+        }
+
+        .token-label {
+            color: #ffd700;
+            font-size: 10px;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+        }
+
+        .token-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .token-slot-machine {
+            display: flex;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 20px;
+            min-width: 60px;
+        }
+
+        .token-digit {
+            width: 12px;
+            height: 20px;
+            background: #000;
+            color: #00ff00;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            border-right: 1px solid #333;
+            position: relative;
+            overflow: hidden;
+            text-shadow: 0 0 3px #00ff00;
+        }
+
+        .token-digit:last-child {
+            border-right: none;
+        }
+
+        .digit-reel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .digit-reel.spinning {
+            animation: slot-spin 0.8s ease-out;
+        }
+
+        @keyframes slot-spin {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-200px); }
+            100% { transform: translateY(0); }
+        }
+
+        .token-icon {
+            color: #ffd700;
+            font-size: 16px;
+            filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.7));
+        }
+
+        .token-breakdown {
+            font-size: 9px;
+            color: #888;
+            margin-top: 2px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .token-breakdown span {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .input-tokens {
+            color: #79c0ff;
+        }
+
+        .output-tokens {
+            color: #7ee787;
+        }
+
         .toggle-container {
             display: flex;
             align-items: center;
@@ -519,6 +640,23 @@
     <div class="header">
         <div class="title">Claude Code Agent</div>
         <div class="controls">
+            <div class="token-counter" id="token-counter">
+                <div class="token-label">TOKENS</div>
+                <div class="token-display">
+                    <span class="token-icon">💎</span>
+                    <div class="token-slot-machine" id="total-tokens">
+                        <!-- Digits will be added dynamically -->
+                    </div>
+                </div>
+                <div class="token-breakdown">
+                    <span class="input-tokens">
+                        ↑ <span id="input-token-count">0</span>
+                    </span>
+                    <span class="output-tokens">
+                        ↓ <span id="output-token-count">0</span>
+                    </span>
+                </div>
+            </div>
             <button class="history-button" id="history-button">History</button>
             <div class="toggle-container">
                 <span class="toggle-label">Auto-confirm</span>
@@ -587,6 +725,9 @@
         let autoConfirmEnabled = false;
         let currentToolExecution = null;
         let conversationHistory = [];
+        let currentTokenCount = 0;
+        let currentInputTokens = 0;
+        let currentOutputTokens = 0;
 
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
@@ -981,6 +1122,88 @@
             });
         }
 
+        // Token counter functions
+        function initializeTokenCounter() {
+            const totalTokensContainer = document.getElementById('total-tokens');
+            // Start with 6 digits for token count display
+            for (let i = 0; i < 6; i++) {
+                const digitElement = document.createElement('div');
+                digitElement.className = 'token-digit';
+                digitElement.innerHTML = '<div class="digit-reel">0</div>';
+                totalTokensContainer.appendChild(digitElement);
+            }
+            updateTokenDisplay(0, 0, 0);
+        }
+
+        function updateTokenDisplay(totalTokens, inputTokens, outputTokens) {
+            // Update the breakdown counts
+            document.getElementById('input-token-count').textContent = inputTokens.toLocaleString();
+            document.getElementById('output-token-count').textContent = outputTokens.toLocaleString();
+            
+            // Update the slot machine display for total tokens
+            const totalStr = totalTokens.toString().padStart(6, '0');
+            const digitElements = document.querySelectorAll('#total-tokens .token-digit');
+            
+            digitElements.forEach((digitElement, index) => {
+                const newDigit = totalStr[index];
+                const reelElement = digitElement.querySelector('.digit-reel');
+                
+                if (reelElement.textContent !== newDigit) {
+                    // Add spinning animation
+                    reelElement.classList.add('spinning');
+                    
+                    // Update digit after animation starts
+                    setTimeout(() => {
+                        reelElement.textContent = newDigit;
+                    }, 400);
+                    
+                    // Remove spinning class after animation
+                    setTimeout(() => {
+                        reelElement.classList.remove('spinning');
+                    }, 800);
+                }
+            });
+        }
+
+        function animateTokenUpdate(newTotal, newInput, newOutput) {
+            // Animate from current values to new values
+            const startTotal = currentTokenCount;
+            const startInput = currentInputTokens;
+            const startOutput = currentOutputTokens;
+            
+            const duration = 1000; // 1 second animation
+            const steps = 30;
+            const stepDuration = duration / steps;
+            
+            let currentStep = 0;
+            
+            const animate = () => {
+                currentStep++;
+                const progress = currentStep / steps;
+                
+                // Eased progress for smooth animation
+                const easedProgress = 1 - Math.pow(1 - progress, 3);
+                
+                const animatedTotal = Math.floor(startTotal + (newTotal - startTotal) * easedProgress);
+                const animatedInput = Math.floor(startInput + (newInput - startInput) * easedProgress);
+                const animatedOutput = Math.floor(startOutput + (newOutput - startOutput) * easedProgress);
+                
+                updateTokenDisplay(animatedTotal, animatedInput, animatedOutput);
+                
+                if (currentStep < steps) {
+                    setTimeout(animate, stepDuration);
+                } else {
+                    // Ensure final values are exact
+                    updateTokenDisplay(newTotal, newInput, newOutput);
+                    currentTokenCount = newTotal;
+                    currentInputTokens = newInput;
+                    currentOutputTokens = newOutput;
+                }
+            };
+            
+            animate();
+        }
+
         // Socket event handlers
         socket.on('connect', function() {
             isConnected = true;
@@ -1025,9 +1248,14 @@
             updateToolExecutionResult(data);
         });
 
+        socket.on('token_usage_update', function(data) {
+            animateTokenUpdate(data.total_tokens, data.total_input_tokens, data.total_output_tokens);
+        });
+
         // Initialize
         sendButton.disabled = true;
         messageInput.focus();
+        initializeTokenCounter();
     </script>
 </body>
 </html>
