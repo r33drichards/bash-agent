@@ -133,8 +133,7 @@
             glibc
             sqlite
             nettools
-            ps
-            pgrep
+            procps
           ];
 
       in
