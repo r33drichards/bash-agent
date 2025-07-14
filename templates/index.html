@@ -107,45 +107,57 @@
             border-radius: 4px;
             overflow: hidden;
             height: 20px;
-            min-width: 60px;
+            min-width: 80px;
+            padding: 0 4px;
+            align-items: center;
+            justify-content: flex-end;
         }
 
-        .token-digit {
-            width: 12px;
-            height: 20px;
-            background: #000;
+        .token-number {
             color: #00ff00;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             font-size: 14px;
             font-weight: bold;
-            border-right: 1px solid #333;
-            position: relative;
-            overflow: hidden;
             text-shadow: 0 0 3px #00ff00;
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            font-variant-numeric: tabular-nums;
+            min-width: 70px;
+            text-align: right;
         }
 
-        .token-digit:last-child {
-            border-right: none;
+        .token-number.updating {
+            transform: scale(1.05);
+            color: #ffff00;
+            text-shadow: 0 0 8px #ffff00;
         }
 
-        .digit-reel {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        .token-number.rolling {
+            animation: rolling-update 0.8s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        .digit-reel.spinning {
-            animation: slot-spin 0.8s ease-out;
-        }
-
-        @keyframes slot-spin {
-            0% { transform: translateY(0); }
-            50% { transform: translateY(-200px); }
-            100% { transform: translateY(0); }
+        @keyframes rolling-update {
+            0% { 
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+            25% { 
+                transform: translateY(-6px) scale(1.03);
+                opacity: 0.8;
+                color: #ffff00;
+                text-shadow: 0 0 10px #ffff00;
+            }
+            75% { 
+                transform: translateY(3px) scale(1.01);
+                opacity: 0.9;
+                color: #00ffff;
+                text-shadow: 0 0 6px #00ffff;
+            }
+            100% { 
+                transform: translateY(0) scale(1);
+                opacity: 1;
+                color: #00ff00;
+                text-shadow: 0 0 3px #00ff00;
+            }
         }
 
         .token-icon {
@@ -644,8 +656,8 @@
                 <div class="token-label">TOKENS</div>
                 <div class="token-display">
                     <span class="token-icon">💎</span>
-                    <div class="token-slot-machine" id="total-tokens">
-                        <!-- Digits will be added dynamically -->
+                    <div class="token-slot-machine">
+                        <div class="token-number" id="total-tokens">0</div>
                     </div>
                 </div>
                 <div class="token-breakdown">
@@ -1124,14 +1136,7 @@
 
         // Token counter functions
         function initializeTokenCounter() {
-            const totalTokensContainer = document.getElementById('total-tokens');
-            // Start with 6 digits for token count display
-            for (let i = 0; i < 6; i++) {
-                const digitElement = document.createElement('div');
-                digitElement.className = 'token-digit';
-                digitElement.innerHTML = '<div class="digit-reel">0</div>';
-                totalTokensContainer.appendChild(digitElement);
-            }
+            // Initialize with zero values
             updateTokenDisplay(0, 0, 0);
         }
 
@@ -1140,39 +1145,23 @@
             document.getElementById('input-token-count').textContent = inputTokens.toLocaleString();
             document.getElementById('output-token-count').textContent = outputTokens.toLocaleString();
             
-            // Update the slot machine display for total tokens
-            const totalStr = totalTokens.toString().padStart(6, '0');
-            const digitElements = document.querySelectorAll('#total-tokens .token-digit');
-            
-            digitElements.forEach((digitElement, index) => {
-                const newDigit = totalStr[index];
-                const reelElement = digitElement.querySelector('.digit-reel');
-                
-                if (reelElement.textContent !== newDigit) {
-                    // Add spinning animation
-                    reelElement.classList.add('spinning');
-                    
-                    // Update digit after animation starts
-                    setTimeout(() => {
-                        reelElement.textContent = newDigit;
-                    }, 400);
-                    
-                    // Remove spinning class after animation
-                    setTimeout(() => {
-                        reelElement.classList.remove('spinning');
-                    }, 800);
-                }
-            });
+            // Update the main token display
+            const totalTokensElement = document.getElementById('total-tokens');
+            totalTokensElement.textContent = totalTokens.toLocaleString();
         }
 
         function animateTokenUpdate(newTotal, newInput, newOutput) {
+            // Add rolling animation to the main counter
+            const totalTokensElement = document.getElementById('total-tokens');
+            totalTokensElement.classList.add('rolling');
+            
             // Animate from current values to new values
             const startTotal = currentTokenCount;
             const startInput = currentInputTokens;
             const startOutput = currentOutputTokens;
             
-            const duration = 1000; // 1 second animation
-            const steps = 30;
+            const duration = 800; // Slightly faster animation
+            const steps = 40; // More steps for smoother rolling
             const stepDuration = duration / steps;
             
             let currentStep = 0;
@@ -1181,8 +1170,8 @@
                 currentStep++;
                 const progress = currentStep / steps;
                 
-                // Eased progress for smooth animation
-                const easedProgress = 1 - Math.pow(1 - progress, 3);
+                // Smooth easing curve for rolling effect
+                const easedProgress = 1 - Math.pow(1 - progress, 2.5);
                 
                 const animatedTotal = Math.floor(startTotal + (newTotal - startTotal) * easedProgress);
                 const animatedInput = Math.floor(startInput + (newInput - startInput) * easedProgress);
@@ -1193,8 +1182,11 @@
                 if (currentStep < steps) {
                     setTimeout(animate, stepDuration);
                 } else {
-                    // Ensure final values are exact
+                    // Ensure final values are exact and remove animation class
                     updateTokenDisplay(newTotal, newInput, newOutput);
+                    totalTokensElement.classList.remove('rolling');
+                    
+                    // Update stored values
                     currentTokenCount = newTotal;
                     currentInputTokens = newInput;
                     currentOutputTokens = newOutput;
