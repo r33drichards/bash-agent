@@ -23,6 +23,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from memory import MemoryManager
 from todos import TodoManager
+from github_rag import GitHubRAG
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -179,7 +180,7 @@ def upload_file():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @socketio.on('connect')
-def handle_connect(auth):
+def handle_connect(auth=None):
     session_id = str(uuid.uuid4())
     join_room(session_id)
     session['session_id'] = session_id
@@ -250,6 +251,15 @@ def handle_user_message(data):
         todo_manager = sessions[session_id]['todo_manager']
         active_todos_summary = todo_manager.get_active_todos_summary()
         
+        # Load GitHub RAG repositories context
+        github_rag_context = ""
+        try:
+            if 'github_rag' in sessions[session_id]:
+                github_rag = sessions[session_id]['github_rag']
+                github_rag_context = github_rag.get_repository_memory_context()
+        except Exception:
+            pass
+        
         # Prepare message with context
         context_parts = []
         
@@ -258,6 +268,9 @@ def handle_user_message(data):
         
         if active_todos_summary != "No active todos.":
             context_parts.append(active_todos_summary)
+            
+        if github_rag_context and github_rag_context != "No GitHub repositories have been indexed for RAG queries.":
+            context_parts.append(github_rag_context)
         
         if context_parts:
             context_msg = "\n\n".join(context_parts) + f"\n\n=== USER MESSAGE ===\n{user_input}"
@@ -649,6 +662,33 @@ def execute_tool_call(tool_call):
     elif tool_call["name"] == "get_todo_stats":
         project = tool_call["input"].get("project")
         output_text = get_todo_stats(project)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "github_rag_index":
+        repo_url = tool_call["input"]["repo_url"]
+        include_extensions = tool_call["input"].get("include_extensions")
+        ignore_dirs = tool_call["input"].get("ignore_dirs")
+        output_text = github_rag_index(repo_url, include_extensions, ignore_dirs)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "github_rag_query":
+        collection_name = tool_call["input"]["collection_name"]
+        question = tool_call["input"]["question"]
+        max_results = tool_call["input"].get("max_results", 5)
+        output_text = github_rag_query(collection_name, question, max_results)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "github_rag_list":
+        output_text = github_rag_list()
         return dict(
             type="tool_result",
             tool_use_id=tool_call["id"],
@@ -1098,6 +1138,64 @@ get_todo_stats_tool = {
                 "description": "Optional project filter for stats"
             }
         }
+    }
+}
+
+github_rag_index_tool = {
+    "name": "github_rag_index",
+    "description": "Index a GitHub repository for RAG (Retrieval Augmented Generation) queries. This tool clones the repository, processes its files, and creates a searchable vector database for code analysis.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "repo_url": {
+                "type": "string",
+                "description": "GitHub repository URL to clone and index (e.g., https://github.com/user/repo)"
+            },
+            "include_extensions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional list of file extensions to include (e.g., ['py', 'js', 'md']). If not specified, all text files are included."
+            },
+            "ignore_dirs": {
+                "type": "array", 
+                "items": {"type": "string"},
+                "description": "Optional list of directories to ignore (e.g., ['node_modules', 'venv']). Default includes common ignore patterns."
+            }
+        },
+        "required": ["repo_url"]
+    }
+}
+
+github_rag_query_tool = {
+    "name": "github_rag_query",
+    "description": "Query an indexed GitHub repository using RAG. Ask questions about the codebase and get answers with citations to specific files and code snippets.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "collection_name": {
+                "type": "string",
+                "description": "The collection name of the indexed repository (returned by github_rag_index or shown in github_rag_list)"
+            },
+            "question": {
+                "type": "string",
+                "description": "The question to ask about the codebase"
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum number of relevant code snippets to retrieve (default: 5)",
+                "default": 5
+            }
+        },
+        "required": ["collection_name", "question"]
+    }
+}
+
+github_rag_list_tool = {
+    "name": "github_rag_list",
+    "description": "List all indexed GitHub repositories and their collection names for querying.",
+    "input_schema": {
+        "type": "object",
+        "properties": {}
     }
 }
 
@@ -1914,6 +2012,110 @@ def get_todo_stats(project=None):
     except Exception as e:
         return f"Error getting todo stats: {str(e)}"
 
+def get_current_github_rag():
+    """Get the current session's GitHub RAG instance."""
+    try:
+        from flask import session as flask_session
+        session_id = flask_session.get('session_id')
+        if session_id and session_id in sessions:
+            if 'github_rag' not in sessions[session_id]:
+                # Initialize GitHub RAG with OpenAI API key
+                openai_api_key = os.environ.get("OPENAI_API_KEY")
+                if not openai_api_key:
+                    raise ValueError("OPENAI_API_KEY environment variable not found")
+                sessions[session_id]['github_rag'] = GitHubRAG(openai_api_key)
+            return sessions[session_id]['github_rag']
+        else:
+            raise Exception("No active session found")
+    except Exception as e:
+        raise Exception(f"Could not get GitHub RAG instance: {str(e)}")
+
+def github_rag_index(repo_url, include_extensions=None, ignore_dirs=None):
+    """Index a GitHub repository for RAG queries."""
+    try:
+        github_rag = get_current_github_rag()
+        result = github_rag.index_repository(
+            repo_url=repo_url,
+            include_extensions=include_extensions,
+            ignore_dirs=ignore_dirs
+        )
+        
+        if result['success']:
+            # Add to memory for context
+            memory_manager = get_current_memory_manager()
+            memory_manager.save_memory(
+                title=f"GitHub Repository Indexed: {result['repo_name']}",
+                content=f"Repository: {repo_url}\nCollection: {result['collection_name']}\nDocuments: {result.get('document_count', 0)}\nChunks: {result.get('chunk_count', 0)}",
+                tags=['github_rag', 'repository', result['repo_name']]
+            )
+            
+            return f"✅ {result['message']}\n\nRepository: {result['repo_name']}\nCollection: {result['collection_name']}\nDocuments indexed: {result.get('document_count', 0)}\nChunks created: {result.get('chunk_count', 0)}\n\nYou can now query this repository using the github_rag_query tool with collection_name: {result['collection_name']}"
+        else:
+            return f"❌ Failed to index repository: {result['error']}"
+            
+    except Exception as e:
+        return f"Error indexing repository: {str(e)}"
+
+def github_rag_query(collection_name, question, max_results=5):
+    """Query an indexed GitHub repository."""
+    try:
+        github_rag = get_current_github_rag()
+        result = github_rag.query_repository(
+            collection_name=collection_name,
+            question=question,
+            max_results=max_results
+        )
+        
+        if result['success']:
+            output_lines = [
+                f"🔍 Query: {result['question']}",
+                f"📁 Repository: {result['repository']}",
+                f"📊 Sources found: {result['total_sources']}",
+                "",
+                "📝 Answer:",
+                result['answer'],
+                "",
+                "📋 Citations:"
+            ]
+            
+            for citation in result['citations']:
+                output_lines.append(f"\n[{citation['source_id']}] {citation['file_path']}")
+                output_lines.append(f"└─ {citation['snippet']}")
+            
+            return "\n".join(output_lines)
+        else:
+            return f"❌ Query failed: {result['error']}"
+            
+    except Exception as e:
+        return f"Error querying repository: {str(e)}"
+
+def github_rag_list():
+    """List all indexed GitHub repositories."""
+    try:
+        github_rag = get_current_github_rag()
+        repositories = github_rag.list_repositories()
+        
+        if not repositories:
+            return "📂 No GitHub repositories have been indexed yet.\n\nUse the github_rag_index tool to index a repository first."
+        
+        output_lines = ["📚 Indexed GitHub Repositories:", ""]
+        
+        for repo in repositories:
+            output_lines.extend([
+                f"📁 {repo['repo_name']}",
+                f"   Collection: {repo['collection_name']}",
+                f"   URL: {repo['repo_url']}",
+                f"   Files: {repo['document_count']} | Chunks: {repo['chunk_count']}",
+                ""
+            ])
+        
+        output_lines.append("💡 Use github_rag_query with the collection name to ask questions about any repository.")
+        
+        return "\n".join(output_lines)
+        
+    except Exception as e:
+        return f"Error listing repositories: {str(e)}"
+
 
 class LLM:
     def __init__(self, model):
@@ -1973,9 +2175,16 @@ class LLM:
             "- search_todos: Find specific todos by title or description\n"
             "- get_todo_stats: Get overview of workload and progress\n"
             "ALWAYS create todos for multi-step tasks and update states as you work. Use 'in_progress' for current work.\n\n"
+            
+            "GITHUB RAG (REPOSITORY ANALYSIS):\n"
+            "Use GitHub RAG tools to index and query external repositories for code analysis:\n"
+            "- github_rag_index: Clone and index a GitHub repository for searchable analysis\n"
+            "- github_rag_query: Ask questions about indexed repositories with citations\n"
+            "- github_rag_list: List all indexed repositories and their collection names\n"
+            "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
