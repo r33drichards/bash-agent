@@ -94,7 +94,6 @@
             chromadb
             langchain
             langchain-openai
-            langchainhub
             langchain-chroma
           ]);
 
@@ -139,10 +138,6 @@
           procps
           cacert
 
-          chromadb 
-          langchain-community 
-          langchain-core 
-          langchain
         ];
 
       in {
