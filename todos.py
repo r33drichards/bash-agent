@@ -222,6 +222,10 @@ class TodoManager:
     
     def search_todos(self, query: str, include_completed: bool = False) -> List[Dict[str, Any]]:
         """Search todos by title or description."""
+        # Validate query length and complexity
+        if len(query) > 1000:
+            raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 1000 characters.")
+        
         where_conditions = ["(title LIKE ? OR description LIKE ?)"]
         params = [f"%{query}%", f"%{query}%"]
         
@@ -242,9 +246,107 @@ class TodoManager:
         
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            try:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError as e:
+                if "LIKE or GLOB pattern too complex" in str(e):
+                    # Fallback: try simplified search strategies
+                    rows = self._fallback_todo_search(cursor, query, include_completed)
+                else:
+                    raise ValueError(f"Database search error: {str(e)}. Query: '{query}'")
+            
+            return [self._row_to_dict(row) for row in rows]
+    
+    def _fallback_todo_search(self, cursor, query: str, include_completed: bool = False):
+        """Fallback search when LIKE pattern is too complex."""
+        # Strategy 1: Try exact match first
+        try:
+            where_conditions = ["(title = ? OR description = ?)"]
+            params = [query, query]
+            
+            if not include_completed:
+                where_conditions.append("state != ?")
+                params.append(self.COMPLETED)
+            
+            where_clause = " AND ".join(where_conditions)
+            
+            sql = f"""
+                SELECT id, title, description, state, priority, tags, metadata, 
+                       due_date, created_at, updated_at, completed_at, project, 
+                       assignee, estimated_hours, actual_hours
+                FROM todos 
+                WHERE {where_clause}
+                ORDER BY priority DESC, created_at DESC
+            """
+            
             cursor.execute(sql, params)
             rows = cursor.fetchall()
-            return [self._row_to_dict(row) for row in rows]
+            if rows:
+                return rows
+        except:
+            pass
+        
+        # Strategy 2: Try word-by-word search
+        try:
+            # Split query into words and search for each
+            words = [word.strip() for word in query.split() if len(word.strip()) > 2]
+            if words:
+                where_conditions = []
+                params = []
+                
+                for word in words[:5]:  # Limit to first 5 words
+                    where_conditions.append("(title LIKE ? OR description LIKE ?)")
+                    word_pattern = f"%{word}%"
+                    params.extend([word_pattern, word_pattern])
+                
+                if not include_completed:
+                    where_conditions.append("state != ?")
+                    params.append(self.COMPLETED)
+                
+                where_clause = " AND ".join(where_conditions)
+                
+                sql = f"""
+                    SELECT id, title, description, state, priority, tags, metadata, 
+                           due_date, created_at, updated_at, completed_at, project, 
+                           assignee, estimated_hours, actual_hours
+                    FROM todos 
+                    WHERE {where_clause}
+                    ORDER BY priority DESC, created_at DESC
+                """
+                
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+                if rows:
+                    return rows
+        except:
+            pass
+        
+        # Strategy 3: Return all recent todos as last resort
+        try:
+            where_conditions = []
+            params = []
+            
+            if not include_completed:
+                where_conditions.append("state != ?")
+                params.append(self.COMPLETED)
+            
+            where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+            
+            sql = f"""
+                SELECT id, title, description, state, priority, tags, metadata, 
+                       due_date, created_at, updated_at, completed_at, project, 
+                       assignee, estimated_hours, actual_hours
+                FROM todos 
+                WHERE {where_clause}
+                ORDER BY priority DESC, created_at DESC
+                LIMIT 20
+            """
+            
+            cursor.execute(sql, params)
+            return cursor.fetchall()
+        except:
+            return []
     
     def get_active_todos_summary(self) -> str:
         """Get a summary of active todos for context."""

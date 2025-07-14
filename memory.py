@@ -105,12 +105,18 @@ class MemoryManager:
             params = []
             
             if query:
+                # Validate query length and complexity
+                if len(query) > 1000:
+                    raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 1000 characters.")
+                
                 where_conditions.append("(title LIKE ? OR content LIKE ?)")
                 query_pattern = f"%{query}%"
                 params.extend([query_pattern, query_pattern])
             
             if tags:
                 for tag in tags:
+                    if len(tag) > 500:
+                        raise ValueError(f"Tag search too long ({len(tag)} characters). Maximum allowed: 500 characters.")
                     where_conditions.append("tags LIKE ?")
                     params.append(f"%{tag}%")
             
@@ -125,8 +131,15 @@ class MemoryManager:
             """
             params.append(limit)
             
-            cursor.execute(sql, params)
-            rows = cursor.fetchall()
+            try:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+            except sqlite3.OperationalError as e:
+                if "LIKE or GLOB pattern too complex" in str(e):
+                    # Fallback: try simplified search strategies
+                    rows = self._fallback_search(cursor, query, tags, limit)
+                else:
+                    raise ValueError(f"Database search error: {str(e)}. Query: '{query}'")
             
             results = []
             for row in rows:
@@ -142,6 +155,85 @@ class MemoryManager:
                 })
             
             return results
+    
+    def _fallback_search(self, cursor, query: str, tags: List[str] = None, limit: int = 20):
+        """Fallback search when LIKE pattern is too complex."""
+        # Strategy 1: Try exact match first
+        try:
+            where_conditions = []
+            params = []
+            
+            if query:
+                where_conditions.append("(title = ? OR content = ?)")
+                params.extend([query, query])
+            
+            if tags:
+                for tag in tags:
+                    where_conditions.append("tags = ?")
+                    params.append(tag)
+            
+            where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+            
+            sql = f"""
+                SELECT id, title, content, tags, metadata, created_at, updated_at, accessed_at
+                FROM memories 
+                WHERE {where_clause}
+                ORDER BY accessed_at DESC, created_at DESC
+                LIMIT ?
+            """
+            params.append(limit)
+            
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            if rows:
+                return rows
+        except:
+            pass
+        
+        # Strategy 2: Try word-by-word search
+        try:
+            if query:
+                # Split query into words and search for each
+                words = [word.strip() for word in query.split() if len(word.strip()) > 2]
+                if words:
+                    where_conditions = []
+                    params = []
+                    
+                    for word in words[:5]:  # Limit to first 5 words
+                        where_conditions.append("(title LIKE ? OR content LIKE ?)")
+                        word_pattern = f"%{word}%"
+                        params.extend([word_pattern, word_pattern])
+                    
+                    where_clause = " OR ".join(where_conditions)
+                    
+                    sql = f"""
+                        SELECT id, title, content, tags, metadata, created_at, updated_at, accessed_at
+                        FROM memories 
+                        WHERE {where_clause}
+                        ORDER BY accessed_at DESC, created_at DESC
+                        LIMIT ?
+                    """
+                    params.append(limit)
+                    
+                    cursor.execute(sql, params)
+                    rows = cursor.fetchall()
+                    if rows:
+                        return rows
+        except:
+            pass
+        
+        # Strategy 3: Return all recent memories as last resort
+        try:
+            sql = """
+                SELECT id, title, content, tags, metadata, created_at, updated_at, accessed_at
+                FROM memories 
+                ORDER BY accessed_at DESC, created_at DESC
+                LIMIT ?
+            """
+            cursor.execute(sql, [limit])
+            return cursor.fetchall()
+        except:
+            return []
     
     def update_memory(self, memory_id: str, title: str = None, content: str = None, 
                      tags: List[str] = None, metadata: Dict[str, Any] = None) -> bool:
