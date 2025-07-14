@@ -138,7 +138,7 @@
           nettools
           procps
           cacert
-
+          poetry
         ];
 
       in {
