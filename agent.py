@@ -23,6 +23,7 @@ from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from memory import MemoryManager
+from todos import TodoManager
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -191,7 +192,8 @@ def handle_connect():
         'connected_at': datetime.now(),
         'conversation_history': [],
         'background_tasks': {},
-        'memory_manager': MemoryManager()
+        'memory_manager': MemoryManager(),
+        'todo_manager': TodoManager()
     }
     
     emit('session_started', {'session_id': session_id})
@@ -248,9 +250,21 @@ def handle_user_message(data):
         # Load relevant memories as context
         relevant_memories = memory_manager.get_memory_context(user_input, max_memories=3)
         
-        # Prepare message with memory context if relevant memories exist
+        # Load active todos as context
+        todo_manager = sessions[session_id]['todo_manager']
+        active_todos_summary = todo_manager.get_active_todos_summary()
+        
+        # Prepare message with context
+        context_parts = []
+        
         if relevant_memories != "No relevant memories found.":
-            context_msg = f"{relevant_memories}\n\n=== USER MESSAGE ===\n{user_input}"
+            context_parts.append(relevant_memories)
+        
+        if active_todos_summary != "No active todos.":
+            context_parts.append(active_todos_summary)
+        
+        if context_parts:
+            context_msg = "\n\n".join(context_parts) + f"\n\n=== USER MESSAGE ===\n{user_input}"
             msg = [{"type": "text", "text": context_msg}]
         else:
             msg = [{"type": "text", "text": user_input}]
@@ -607,6 +621,81 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "create_todo":
+        title = tool_call["input"]["title"]
+        description = tool_call["input"].get("description", "")
+        priority = tool_call["input"].get("priority", "medium")
+        project = tool_call["input"].get("project")
+        due_date = tool_call["input"].get("due_date")
+        tags = tool_call["input"].get("tags")
+        estimated_hours = tool_call["input"].get("estimated_hours")
+        output_text = create_todo(title, description, priority, project, due_date, tags, estimated_hours)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "update_todo":
+        todo_id = tool_call["input"]["todo_id"]
+        updates = {k: v for k, v in tool_call["input"].items() if k != "todo_id"}
+        output_text = update_todo(todo_id, **updates)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "list_todos":
+        state = tool_call["input"].get("state")
+        priority = tool_call["input"].get("priority")
+        project = tool_call["input"].get("project")
+        limit = tool_call["input"].get("limit", 20)
+        output_text = list_todos(state, priority, project, limit)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "get_kanban_board":
+        project = tool_call["input"].get("project")
+        output_text = get_kanban_board(project)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "search_todos":
+        query = tool_call["input"]["query"]
+        include_completed = tool_call["input"].get("include_completed", False)
+        output_text = search_todos(query, include_completed)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "get_todo":
+        todo_id = tool_call["input"]["todo_id"]
+        output_text = get_todo(todo_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "delete_todo":
+        todo_id = tool_call["input"]["todo_id"]
+        output_text = delete_todo(todo_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "get_todo_stats":
+        project = tool_call["input"].get("project")
+        output_text = get_todo_stats(project)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
@@ -933,6 +1022,198 @@ delete_memory_tool = {
             }
         },
         "required": ["memory_id"]
+    }
+}
+
+# Todo tool definitions
+create_todo_tool = {
+    "name": "create_todo",
+    "description": "Create a new todo item for task tracking. Use this to break down complex work into manageable tasks.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "A clear, concise title for the todo"
+            },
+            "description": {
+                "type": "string",
+                "description": "Detailed description of what needs to be done"
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "urgent"],
+                "description": "Priority level of the todo (default: medium)"
+            },
+            "project": {
+                "type": "string",
+                "description": "Project or category this todo belongs to"
+            },
+            "due_date": {
+                "type": "string",
+                "description": "Due date in YYYY-MM-DD format"
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional tags to categorize the todo"
+            },
+            "estimated_hours": {
+                "type": "number",
+                "description": "Estimated time to complete in hours"
+            }
+        },
+        "required": ["title"]
+    }
+}
+
+update_todo_tool = {
+    "name": "update_todo",
+    "description": "Update an existing todo item. Use this to change state (todo/in_progress/completed), priority, or other details.",
+    "input_schema": {
+        "type": "object", 
+        "properties": {
+            "todo_id": {
+                "type": "string",
+                "description": "The ID of the todo to update"
+            },
+            "title": {
+                "type": "string",
+                "description": "New title for the todo"
+            },
+            "description": {
+                "type": "string",
+                "description": "New description for the todo"
+            },
+            "state": {
+                "type": "string",
+                "enum": ["todo", "in_progress", "completed"],
+                "description": "New state for the todo"
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "urgent"],
+                "description": "New priority level"
+            },
+            "project": {
+                "type": "string",
+                "description": "New project assignment"
+            },
+            "due_date": {
+                "type": "string",
+                "description": "New due date in YYYY-MM-DD format"
+            },
+            "actual_hours": {
+                "type": "number",
+                "description": "Actual time spent on this todo in hours"
+            }
+        },
+        "required": ["todo_id"]
+    }
+}
+
+list_todos_tool = {
+    "name": "list_todos",
+    "description": "List todos with optional filtering by state, priority, or project. Use this to see current work status.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "state": {
+                "type": "string",
+                "enum": ["todo", "in_progress", "completed"],
+                "description": "Filter by state"
+            },
+            "priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "urgent"],
+                "description": "Filter by priority"
+            },
+            "project": {
+                "type": "string",
+                "description": "Filter by project"
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of todos to return (default: 20)"
+            }
+        }
+    }
+}
+
+get_kanban_board_tool = {
+    "name": "get_kanban_board",
+    "description": "Get a kanban board view of all todos organized by state (todo, in_progress, completed).",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": "Optional project filter"
+            }
+        }
+    }
+}
+
+search_todos_tool = {
+    "name": "search_todos",
+    "description": "Search todos by title or description text.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search query to find todos"
+            },
+            "include_completed": {
+                "type": "boolean",
+                "description": "Whether to include completed todos in search (default: false)"
+            }
+        },
+        "required": ["query"]
+    }
+}
+
+get_todo_tool = {
+    "name": "get_todo",
+    "description": "Get detailed information about a specific todo by ID.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "todo_id": {
+                "type": "string",
+                "description": "The ID of the todo to retrieve"
+            }
+        },
+        "required": ["todo_id"]
+    }
+}
+
+delete_todo_tool = {
+    "name": "delete_todo",
+    "description": "Delete a todo by ID. Use sparingly - usually better to mark as completed.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "todo_id": {
+                "type": "string",
+                "description": "The ID of the todo to delete"
+            }
+        },
+        "required": ["todo_id"]
+    }
+}
+
+get_todo_stats_tool = {
+    "name": "get_todo_stats",
+    "description": "Get statistics about todos (counts by state, priority, overdue items, etc.).",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": "Optional project filter for stats"
+            }
+        }
     }
 }
 
@@ -1715,6 +1996,236 @@ def delete_memory(memory_id):
     except Exception as e:
         return f"Error deleting memory: {str(e)}"
 
+def get_current_todo_manager():
+    """Get the todo manager for the current session."""
+    from flask import session as flask_session
+    session_id = flask_session.get('session_id')
+    if session_id and session_id in sessions:
+        return sessions[session_id]['todo_manager']
+    return TodoManager()  # Fallback to default
+
+def create_todo(title, description="", priority="medium", project=None, due_date=None, tags=None, estimated_hours=None):
+    """Create a new todo using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        todo_id = todo_manager.create_todo(
+            title=title,
+            description=description,
+            priority=priority,
+            project=project,
+            due_date=due_date,
+            tags=tags or [],
+            estimated_hours=estimated_hours
+        )
+        return f"Todo created successfully with ID: {todo_id}\nTitle: {title}\nPriority: {priority}"
+    except Exception as e:
+        return f"Error creating todo: {str(e)}"
+
+def update_todo(todo_id, **kwargs):
+    """Update a todo using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        success = todo_manager.update_todo(todo_id, **kwargs)
+        
+        if success:
+            updated_fields = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+            return f"Todo {todo_id} updated successfully.\nUpdated: {updated_fields}"
+        else:
+            return f"Todo with ID {todo_id} not found or could not be updated."
+    except Exception as e:
+        return f"Error updating todo: {str(e)}"
+
+def list_todos(state=None, priority=None, project=None, limit=20):
+    """List todos using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        todos = todo_manager.list_todos(
+            state=state,
+            priority=priority,
+            project=project,
+            limit=limit
+        )
+        
+        if not todos:
+            filter_desc = []
+            if state: filter_desc.append(f"state={state}")
+            if priority: filter_desc.append(f"priority={priority}")
+            if project: filter_desc.append(f"project={project}")
+            filters = f" ({', '.join(filter_desc)})" if filter_desc else ""
+            return f"No todos found{filters}."
+        
+        result_lines = [f"Found {len(todos)} todos:"]
+        for todo in todos:
+            status_emoji = {"todo": "📋", "in_progress": "🔄", "completed": "✅"}.get(todo['state'], "📋")
+            priority_emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(todo['priority'], "🟡")
+            
+            result_lines.append(f"\n{status_emoji} {priority_emoji} [{todo['state'].upper()}] {todo['title']}")
+            result_lines.append(f"   ID: {todo['id']}")
+            
+            if todo['description']:
+                desc_preview = todo['description'][:100] + "..." if len(todo['description']) > 100 else todo['description']
+                result_lines.append(f"   Description: {desc_preview}")
+            
+            if todo['project']:
+                result_lines.append(f"   Project: {todo['project']}")
+            
+            if todo['due_date']:
+                result_lines.append(f"   Due: {todo['due_date']}")
+            
+            result_lines.append(f"   Created: {todo['created_at']}")
+            
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error listing todos: {str(e)}"
+
+def get_kanban_board(project=None):
+    """Get kanban board view using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        board = todo_manager.get_kanban_board(project=project)
+        
+        result_lines = ["=== KANBAN BOARD ==="]
+        if project:
+            result_lines[0] += f" (Project: {project})"
+        
+        for state, todos in board.items():
+            state_title = state.replace("_", " ").title()
+            emoji = {"Todo": "📋", "In Progress": "🔄", "Completed": "✅"}[state_title]
+            result_lines.append(f"\n{emoji} {state_title} ({len(todos)} items):")
+            result_lines.append("=" * 30)
+            
+            if not todos:
+                result_lines.append("   (no items)")
+            else:
+                for todo in todos[:10]:  # Show max 10 per column
+                    priority_emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(todo['priority'], "🟡")
+                    result_lines.append(f"   {priority_emoji} {todo['title']} (ID: {todo['id'][:8]})")
+                    
+                if len(todos) > 10:
+                    result_lines.append(f"   ... and {len(todos) - 10} more")
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error getting kanban board: {str(e)}"
+
+def search_todos(query, include_completed=False):
+    """Search todos using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        todos = todo_manager.search_todos(query, include_completed)
+        
+        if not todos:
+            return f"No todos found matching '{query}'."
+        
+        result_lines = [f"Found {len(todos)} todos matching '{query}':"]
+        for todo in todos:
+            status_emoji = {"todo": "📋", "in_progress": "🔄", "completed": "✅"}.get(todo['state'], "📋")
+            priority_emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(todo['priority'], "🟡")
+            
+            result_lines.append(f"\n{status_emoji} {priority_emoji} {todo['title']}")
+            result_lines.append(f"   ID: {todo['id']}")
+            result_lines.append(f"   State: {todo['state']}")
+            if todo['description']:
+                desc_preview = todo['description'][:100] + "..." if len(todo['description']) > 100 else todo['description']
+                result_lines.append(f"   Description: {desc_preview}")
+            
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error searching todos: {str(e)}"
+
+def get_todo(todo_id):
+    """Get a specific todo using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        todo = todo_manager.get_todo(todo_id)
+        
+        if not todo:
+            return f"Todo with ID {todo_id} not found."
+        
+        status_emoji = {"todo": "📋", "in_progress": "🔄", "completed": "✅"}.get(todo['state'], "📋")
+        priority_emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(todo['priority'], "🟡")
+        
+        result_lines = [
+            f"{status_emoji} {priority_emoji} {todo['title']}",
+            f"ID: {todo['id']}",
+            f"State: {todo['state']}",
+            f"Priority: {todo['priority']}"
+        ]
+        
+        if todo['description']:
+            result_lines.append(f"Description: {todo['description']}")
+        
+        if todo['project']:
+            result_lines.append(f"Project: {todo['project']}")
+        
+        if todo['due_date']:
+            result_lines.append(f"Due Date: {todo['due_date']}")
+        
+        if todo['tags']:
+            result_lines.append(f"Tags: {', '.join(todo['tags'])}")
+        
+        if todo['estimated_hours']:
+            result_lines.append(f"Estimated Hours: {todo['estimated_hours']}")
+        
+        if todo['actual_hours']:
+            result_lines.append(f"Actual Hours: {todo['actual_hours']}")
+        
+        result_lines.extend([
+            f"Created: {todo['created_at']}",
+            f"Updated: {todo['updated_at']}"
+        ])
+        
+        if todo['completed_at']:
+            result_lines.append(f"Completed: {todo['completed_at']}")
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error retrieving todo: {str(e)}"
+
+def delete_todo(todo_id):
+    """Delete a todo using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        success = todo_manager.delete_todo(todo_id)
+        
+        if success:
+            return f"Todo with ID {todo_id} deleted successfully."
+        else:
+            return f"Todo with ID {todo_id} not found or could not be deleted."
+    except Exception as e:
+        return f"Error deleting todo: {str(e)}"
+
+def get_todo_stats(project=None):
+    """Get todo statistics using the current session's todo manager."""
+    try:
+        todo_manager = get_current_todo_manager()
+        stats = todo_manager.get_project_stats(project)
+        
+        result_lines = ["=== TODO STATISTICS ==="]
+        if project:
+            result_lines[0] += f" (Project: {project})"
+        
+        # State counts
+        result_lines.append("\n📊 By State:")
+        for state, count in stats['states'].items():
+            emoji = {"todo": "📋", "in_progress": "🔄", "completed": "✅"}.get(state, "📋")
+            result_lines.append(f"   {emoji} {state.replace('_', ' ').title()}: {count}")
+        
+        # Priority counts
+        if stats['priorities']:
+            result_lines.append("\n🎯 By Priority (active only):")
+            for priority, count in stats['priorities'].items():
+                emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(priority, "🟡")
+                result_lines.append(f"   {emoji} {priority.title()}: {count}")
+        
+        # Overdue and total
+        result_lines.append(f"\n⚠️  Overdue: {stats['overdue']}")
+        result_lines.append(f"📈 Total: {stats['total']}")
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error getting todo stats: {str(e)}"
+
 
 class LLM:
     def __init__(self, model):
@@ -1735,7 +2246,8 @@ class LLM:
             "- edit_file_diff: Apply unified diff patches to files\n"
             "- overwrite_file: Replace entire file contents\n"
             "- Background task tools: create_bg_task, list_bg_tasks, kill_bg_task, logs_bg_task, restart_bg_task\n"
-            "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n\n"
+            "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n"
+            "- Todo/Task tools: create_todo, update_todo, list_todos, get_kanban_board, search_todos, get_todo, delete_todo, get_todo_stats\n\n"
             
             "FILE EDITING GUIDELINES:\n"
             "- Use edit_file_diff for precise, contextual changes with unified diff format\n"
@@ -1760,9 +2272,19 @@ class LLM:
             "- get_memory: Retrieve a specific memory by ID\n"
             "- delete_memory: Remove outdated or incorrect memories\n"
             "Always check for relevant memories before starting complex tasks to leverage previous work.\n\n"
+            
+            "TODO/TASK MANAGEMENT:\n"
+            "Use the todo tools to break down complex work and track progress with kanban workflow:\n"
+            "- create_todo: Break complex tasks into manageable todos with priorities and due dates\n"
+            "- update_todo: Move todos between states (todo/in_progress/completed) and update details\n"
+            "- list_todos: View current work filtered by state, priority, or project\n"
+            "- get_kanban_board: See organized kanban board view of all tasks\n"
+            "- search_todos: Find specific todos by title or description\n"
+            "- get_todo_stats: Get overview of workload and progress\n"
+            "ALWAYS create todos for multi-step tasks and update states as you work. Use 'in_progress' for current work.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
