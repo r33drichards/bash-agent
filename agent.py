@@ -541,6 +541,14 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "read_file":
+        file_path = tool_call["input"]["file_path"]
+        output_text = read_file(file_path)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
@@ -673,6 +681,21 @@ overwrite_file_tool = {
             }
         },
         "required": ["file_path", "content"]
+    }
+}
+
+read_file_tool = {
+    "name": "read_file",
+    "description": "Read the contents of a file with line numbers for easy reference by LLM. Useful for viewing and analyzing code or text files.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the file to read."
+            }
+        },
+        "required": ["file_path"]
     }
 }
 
@@ -1414,6 +1437,24 @@ def overwrite_file(file_path, content):
     except Exception as e:
         return f"Error overwriting file: {str(e)}"
 
+def read_file(file_path):
+    """Read a file and return its contents with line numbers for LLM reference."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Format with line numbers, similar to cat -n but using → for better visibility
+        numbered_lines = []
+        for i, line in enumerate(lines, 1):
+            # Remove trailing newline for formatting, we'll add it back
+            line_content = line.rstrip('\n\r')
+            numbered_lines.append(f"{i:4d}→{line_content}")
+        
+        result = '\n'.join(numbered_lines)
+        return f"Contents of {file_path}:\n{result}"
+    except Exception as e:
+        return f"Error reading file {file_path}: {str(e)}"
+
 
 class LLM:
     def __init__(self, model):
@@ -1451,7 +1492,7 @@ class LLM:
             "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n" 
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
