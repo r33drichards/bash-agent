@@ -95,6 +95,7 @@
             langchain
             langchain-openai
             langchain-chroma
+            langchain-core
           ]);
 
         # Web agent entrypoint

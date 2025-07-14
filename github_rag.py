@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +30,10 @@ class GitHubRAG:
         self.llm = ChatOpenAI(openai_api_key=openai_api_key, model_name="gpt-3.5-turbo", temperature=0)
         self.repositories = {}  # Track indexed repositories
         
-        # Create persist directory
+        # Create persist directory with proper permissions
         os.makedirs(persist_directory, exist_ok=True)
+        # Ensure the directory is writable
+        os.chmod(persist_directory, 0o755)
         
         # Load existing repositories
         self._load_repository_index()
@@ -73,16 +76,30 @@ class GitHubRAG:
         
         return repo_path
     
-    def should_process_file(self, file_path: str, ignore_dirs: List[str], include_extensions: Optional[List[str]]) -> bool:
+    def should_process_file(self, file_path: str, ignore_dirs: List[str], include_extensions: Optional[List[str]], max_file_size: int = 100000) -> bool:
         """Determine if a file should be processed."""
         for ignore_dir in ignore_dirs:
             if f"/{ignore_dir}/" in file_path or file_path.startswith(f"{ignore_dir}/"):
                 return False
         
+        # Check file size
+        try:
+            if os.path.getsize(file_path) > max_file_size:
+                logger.warning(f"Skipping large file {file_path} (size: {os.path.getsize(file_path)} bytes)")
+                return False
+        except OSError:
+            return False
+        
         if include_extensions:
             file_ext = os.path.splitext(file_path)[1].lower()
             if not file_ext or file_ext[1:] not in include_extensions:
                 return False
+        
+        # Skip binary files by checking for common binary extensions
+        binary_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.pdf', '.zip', '.tar', '.gz', '.exe', '.dll', '.so', '.dylib', '.woff', '.woff2', '.ttf', '.otf'}
+        file_ext = os.path.splitext(file_path)[1].lower()
+        if file_ext in binary_extensions:
+            return False
         
         return True
     
@@ -103,24 +120,25 @@ class GitHubRAG:
         logger.warning(f"Could not decode file {file_path}")
         return ""
     
-    def get_repository_files(self, repo_path: str, ignore_dirs: List[str] = None, include_extensions: List[str] = None):
+    def get_repository_files(self, repo_path: str, ignore_dirs: List[str] = None, include_extensions: List[str] = None, max_file_size: int = 100000):
         """Get all files from a repository and convert them to documents."""
         from langchain_core.documents import Document
         
         if ignore_dirs is None:
-            ignore_dirs = ['.git', 'node_modules', '__pycache__', '.idea', '.vscode', 'venv', '.env']
+            ignore_dirs = ['.git', 'node_modules', '__pycache__', '.idea', '.vscode', 'venv', '.env', 'target', 'build', 'dist']
         
         documents = []
+        skipped_files = 0
         
         for root, _, files in os.walk(repo_path):
             for file in files:
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, repo_path)
                 
-                if self.should_process_file(rel_path, ignore_dirs, include_extensions):
+                if self.should_process_file(file_path, ignore_dirs, include_extensions, max_file_size):
                     try:
                         content = self.read_file_contents(file_path)
-                        if content:
+                        if content and len(content.strip()) > 0:
                             doc = Document(
                                 page_content=content,
                                 metadata={
@@ -132,8 +150,11 @@ class GitHubRAG:
                             documents.append(doc)
                     except Exception as e:
                         logger.warning(f"Error processing file {rel_path}: {str(e)}")
+                        skipped_files += 1
+                else:
+                    skipped_files += 1
         
-        logger.info(f"Processed {len(documents)} files from the repository")
+        logger.info(f"Processed {len(documents)} files from the repository (skipped {skipped_files} files)")
         return documents
     
     def split_documents(self, documents, chunk_size: int = 1000, chunk_overlap: int = 100):
@@ -155,7 +176,7 @@ class GitHubRAG:
         
         return chunked_docs
     
-    def index_repository(self, repo_url: str, include_extensions: List[str] = None, ignore_dirs: List[str] = None, progress_callback=None) -> Dict[str, Any]:
+    def index_repository(self, repo_url: str, include_extensions: List[str] = None, ignore_dirs: List[str] = None, progress_callback=None, max_file_size: int = 100000, max_chunk_count: int = 5000, force_reindex: bool = False) -> Dict[str, Any]:
         """Index a GitHub repository for RAG queries."""
         from langchain_chroma import Chroma
         
@@ -164,7 +185,7 @@ class GitHubRAG:
         collection_name = f"repo_{repo_name}".replace('-', '_').replace('.', '_')
         
         # Check if already indexed
-        if collection_name in self.repositories:
+        if collection_name in self.repositories and not force_reindex:
             return {
                 "success": True,
                 "message": f"Repository {repo_name} is already indexed",
@@ -182,7 +203,7 @@ class GitHubRAG:
                 # Get documents
                 if progress_callback:
                     progress_callback({"step": "scanning", "progress": 25, "message": "Scanning repository files..."})
-                documents = self.get_repository_files(repo_path, ignore_dirs, include_extensions)
+                documents = self.get_repository_files(repo_path, ignore_dirs, include_extensions, max_file_size)
                 
                 if not documents:
                     return {
@@ -195,15 +216,36 @@ class GitHubRAG:
                     progress_callback({"step": "chunking", "progress": 50, "message": f"Processing {len(documents)} files into chunks..."})
                 chunked_docs = self.split_documents(documents)
                 
-                # Create vector store
+                # Limit chunks to prevent token overflow
+                if len(chunked_docs) > max_chunk_count:
+                    logger.warning(f"Repository has {len(chunked_docs)} chunks, limiting to {max_chunk_count} to prevent token overflow")
+                    chunked_docs = chunked_docs[:max_chunk_count]
+                
+                # Create vector store with batch processing to handle large repositories
                 if progress_callback:
                     progress_callback({"step": "embedding", "progress": 75, "message": f"Generating embeddings for {len(chunked_docs)} chunks..."})
-                vector_store = Chroma.from_documents(
-                    documents=chunked_docs,
-                    embedding=self.embeddings,
-                    persist_directory=self.persist_directory,
-                    collection_name=collection_name
-                )
+                
+                # Process in batches to avoid memory issues
+                batch_size = 100
+                vector_store = None
+                for i in range(0, len(chunked_docs), batch_size):
+                    batch = chunked_docs[i:i + batch_size]
+                    
+                    if vector_store is None:
+                        # First batch creates the vector store
+                        vector_store = Chroma.from_documents(
+                            documents=batch,
+                            embedding=self.embeddings,
+                            persist_directory=self.persist_directory,
+                            collection_name=collection_name
+                        )
+                    else:
+                        # Subsequent batches add to existing store
+                        vector_store.add_documents(batch)
+                    
+                    if progress_callback:
+                        progress = 75 + (20 * (i + batch_size) / len(chunked_docs))
+                        progress_callback({"step": "embedding", "progress": min(95, progress), "message": f"Processing batch {i//batch_size + 1}/{(len(chunked_docs) + batch_size - 1)//batch_size}..."})
                 
                 # Update repository index
                 self.repositories[collection_name] = {
@@ -211,7 +253,7 @@ class GitHubRAG:
                     "repo_name": repo_name,
                     "document_count": len(documents),
                     "chunk_count": len(chunked_docs),
-                    "indexed_at": str(os.path.getctime(self.persist_directory))
+                    "indexed_at": datetime.now().isoformat()
                 }
                 
                 self._save_repository_index()
@@ -354,3 +396,39 @@ Answer:"""
         
         context_parts.append("\nYou can query these repositories using the github_rag_query tool.")
         return "\n".join(context_parts)
+    
+    def get_repository_stats(self, repo_path: str, ignore_dirs: List[str] = None) -> Dict[str, Any]:
+        """Get statistics about a repository to help with filtering decisions."""
+        if ignore_dirs is None:
+            ignore_dirs = ['.git', 'node_modules', '__pycache__', '.idea', '.vscode', 'venv', '.env', 'target', 'build', 'dist']
+        
+        stats = {
+            'total_files': 0,
+            'large_files': 0,
+            'file_extensions': {},
+            'directory_sizes': {},
+            'total_size': 0
+        }
+        
+        for root, dirs, files in os.walk(repo_path):
+            # Skip ignored directories
+            dirs[:] = [d for d in dirs if not any(ignore in root for ignore in ignore_dirs)]
+            
+            for file in files:
+                file_path = os.path.join(root, file)
+                try:
+                    file_size = os.path.getsize(file_path)
+                    stats['total_files'] += 1
+                    stats['total_size'] += file_size
+                    
+                    if file_size > 100000:  # Files larger than 100KB
+                        stats['large_files'] += 1
+                    
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext:
+                        stats['file_extensions'][ext] = stats['file_extensions'].get(ext, 0) + 1
+                    
+                except OSError:
+                    continue
+        
+        return stats
