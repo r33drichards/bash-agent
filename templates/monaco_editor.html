@@ -281,6 +281,8 @@
         let fileSystemData = [];
         let editorContent = '';
         let contentChanged = false;
+        let autoSaveTimeout = null;
+        const AUTO_SAVE_DELAY = 2000; // 2 seconds
 
         // DOM elements
         const saveButton = document.getElementById('save-button');
@@ -312,6 +314,17 @@
                 if (currentFilePath) {
                     contentChanged = true;
                     saveButton.disabled = false;
+                    
+                    // Auto-save functionality
+                    if (autoSaveTimeout) {
+                        clearTimeout(autoSaveTimeout);
+                    }
+                    
+                    autoSaveTimeout = setTimeout(() => {
+                        if (contentChanged && currentFilePath) {
+                            autoSaveFile();
+                        }
+                    }, AUTO_SAVE_DELAY);
                 }
             });
 
@@ -557,6 +570,44 @@
                 .catch(error => {
                     showNotification(error.message, 'error');
                     hideLoading();
+                });
+        }
+
+        // Auto-save function
+        function autoSaveFile() {
+            if (!currentFilePath) {
+                return;
+            }
+
+            const content = editor.getValue();
+            
+            fetch('/api/monaco/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    path: currentFilePath,
+                    content: content
+                })
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Auto-save failed');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showNotification('Auto-saved', 'success');
+                        contentChanged = false;
+                        saveButton.disabled = true;
+                    } else {
+                        throw new Error(data.message || 'Auto-save failed');
+                    }
+                })
+                .catch(error => {
+                    console.error('Auto-save error:', error);
                 });
         }
 
