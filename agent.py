@@ -187,7 +187,7 @@ def handle_connect(auth=None):
     
     # Initialize session with LLM
     sessions[session_id] = {
-        'llm': LLM("claude-3-7-sonnet-latest"),
+        'llm': LLM("claude-3-7-sonnet-latest", session_id),
         'auto_confirm': app.config['AUTO_CONFIRM'],
         'connected_at': datetime.now(),
         'conversation_history': [],
@@ -2231,6 +2231,12 @@ def github_rag_index(repo_url, include_extensions=None, ignore_dirs=None):
                 tags=['github_rag', 'repository', result['repo_name']]
             )
             
+            # Refresh system prompt to include the new repository
+            session_id = get_current_session_id()
+            if session_id and session_id in sessions:
+                llm = sessions[session_id]['llm']
+                llm.refresh_system_prompt()
+            
             return f"✅ {result['message']}\n\nRepository: {result['repo_name']}\nCollection: {result['collection_name']}\nDocuments indexed: {result.get('document_count', 0)}\nChunks created: {result.get('chunk_count', 0)}\n\nYou can now query this repository using the github_rag_query tool with collection_name: {result['collection_name']}"
         else:
             return f"❌ Failed to index repository: {result['error']}"
@@ -2300,16 +2306,22 @@ def github_rag_list():
 
 
 class LLM:
-    def __init__(self, model):
+    def __init__(self, model, session_id=None):
         if "ANTHROPIC_API_KEY" not in os.environ:
             raise ValueError("ANTHROPIC_API_KEY environment variable not found.")
         self.client = anthropic.Anthropic()
         self.model = model
+        self.session_id = session_id
         self.messages = []
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_tokens = 0
-        self.system_prompt = (
+        self.system_prompt = self._build_system_prompt()
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+    
+    def _build_system_prompt(self):
+        """Build the system prompt dynamically including RAG repository information."""
+        base_prompt = (
             """You are a helpful AI assistant with access to bash, sqlite, Python, and file editing tools.\n"""
             "You can help the user by executing commands and interpreting the results.\n"
             "Be careful with destructive commands and always explain what you're doing.\n\n"
@@ -2365,9 +2377,60 @@ class LLM:
             "- github_rag_query: Ask questions about indexed repositories with citations\n"
             "- github_rag_list: List all indexed repositories and their collection names\n"
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
-            + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        
+        # Add RAG repository information if available
+        rag_info = self._get_rag_repositories_info()
+        if rag_info:
+            base_prompt += rag_info + "\n\n"
+            
+        # add all memory titles to the system prompt
+        memory_manager = get_current_memory_manager()
+        memory_titles = [memory['title'] for memory in memory_manager.list_memories(limit=100)]
+        if memory_titles:
+            base_prompt += "MEMORY TITLES:\n"
+            for title in memory_titles:
+                base_prompt += f"- {title}\n"
+            
+        # Add custom system prompt if configured
+        if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT']:
+            base_prompt += app.config['SYSTEM_PROMPT']
+            
+        print("SYSTEM PROMPT:", base_prompt)
+            
+        return base_prompt
+    
+    def _get_rag_repositories_info(self):
+        """Get information about available RAG repositories."""
+        try:
+            if self.session_id and self.session_id in sessions:
+                if 'github_rag' not in sessions[self.session_id]:
+                    # Try to initialize GitHub RAG to check for existing repositories
+                    openai_api_key = os.environ.get("OPENAI_API_KEY")
+                    if openai_api_key:
+                        sessions[self.session_id]['github_rag'] = GitHubRAG(openai_api_key)
+                    else:
+                        return None
+                
+                github_rag = sessions[self.session_id]['github_rag']
+                repositories = github_rag.list_repositories()
+                
+                if repositories:
+                    rag_info = "INDEXED RAG REPOSITORIES:\n"
+                    rag_info += "The following GitHub repositories are available for querying:\n"
+                    for repo in repositories:
+                        rag_info += f"- {repo['repo_name']} (collection: {repo['collection_name']}) - {repo['document_count']} files, {repo['chunk_count']} chunks\n"
+                    rag_info += "Use github_rag_query with the collection name to ask questions about these repositories."
+                    return rag_info
+        except Exception:
+            # Silently ignore errors to avoid breaking initialization
+            pass
+        
+        return None
+    
+    def refresh_system_prompt(self):
+        """Refresh the system prompt to include newly indexed repositories."""
+        self.system_prompt = self._build_system_prompt()
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
