@@ -55,116 +55,69 @@
             gap: 16px;
         }
 
-        /* Token Counter Casino Style */
+        /* Clean Token Counter Style */
         .token-counter {
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
-            border: 2px solid #ffd700;
-            border-radius: 12px;
-            padding: 8px 16px;
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .token-counter::before {
-            content: '';
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            right: -2px;
-            bottom: -2px;
-            background: linear-gradient(45deg, #ffd700, #ffed4e, #ffd700, #ffed4e);
-            border-radius: 12px;
-            z-index: -1;
-            animation: golden-glow 2s ease-in-out infinite alternate;
-        }
-
-        @keyframes golden-glow {
-            0% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
-            100% { box-shadow: 0 0 25px rgba(255, 215, 0, 0.8); }
+            background: linear-gradient(135deg, #161b22, #21262d);
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-weight: 500;
         }
 
         .token-label {
-            color: #ffd700;
+            color: #7d8590;
             font-size: 10px;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
             margin-bottom: 2px;
-            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+            text-transform: uppercase;
         }
 
         .token-display {
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: center;
         }
 
-        .token-slot-machine {
-            display: flex;
-            background: #000;
-            border: 1px solid #333;
+        .token-counter-display {
+            background: #0d1117;
+            border: 1px solid #21262d;
             border-radius: 4px;
-            overflow: hidden;
-            height: 20px;
-            min-width: 80px;
-            padding: 0 4px;
-            align-items: center;
-            justify-content: flex-end;
+            padding: 4px 8px;
+            min-width: 70px;
         }
 
         .token-number {
-            color: #00ff00;
+            color: #58a6ff;
             font-size: 14px;
-            font-weight: bold;
-            text-shadow: 0 0 3px #00ff00;
-            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
+            font-weight: 600;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             font-variant-numeric: tabular-nums;
-            min-width: 70px;
-            text-align: right;
-        }
-
-        .token-number.updating {
-            transform: scale(1.05);
-            color: #ffff00;
-            text-shadow: 0 0 8px #ffff00;
+            text-align: center;
         }
 
         .token-number.rolling {
-            animation: rolling-update 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            animation: rolling-update 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         @keyframes rolling-update {
             0% { 
                 transform: translateY(0) scale(1);
                 opacity: 1;
+                color: #58a6ff;
             }
-            25% { 
-                transform: translateY(-6px) scale(1.03);
-                opacity: 0.8;
-                color: #ffff00;
-                text-shadow: 0 0 10px #ffff00;
-            }
-            75% { 
-                transform: translateY(3px) scale(1.01);
+            50% { 
+                transform: translateY(-2px) scale(1.02);
                 opacity: 0.9;
-                color: #00ffff;
-                text-shadow: 0 0 6px #00ffff;
+                color: #79c0ff;
             }
             100% { 
                 transform: translateY(0) scale(1);
                 opacity: 1;
-                color: #00ff00;
-                text-shadow: 0 0 3px #00ff00;
+                color: #58a6ff;
             }
         }
 
-        .token-icon {
-            color: #ffd700;
-            font-size: 16px;
-            filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.7));
-        }
 
         .token-breakdown {
             font-size: 9px;
@@ -655,8 +608,7 @@
             <div class="token-counter" id="token-counter">
                 <div class="token-label">TOKENS</div>
                 <div class="token-display">
-                    <span class="token-icon">💎</span>
-                    <div class="token-slot-machine">
+                    <div class="token-counter-display">
                         <div class="token-number" id="total-tokens">0</div>
                     </div>
                 </div>
