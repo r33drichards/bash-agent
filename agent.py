@@ -22,6 +22,8 @@ import contextlib
 from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
+from memory import MemoryManager
+
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(script_dir, 'templates')
@@ -188,7 +190,8 @@ def handle_connect():
         'auto_confirm': app.config['AUTO_CONFIRM'],
         'connected_at': datetime.now(),
         'conversation_history': [],
-        'background_tasks': {}
+        'background_tasks': {},
+        'memory_manager': MemoryManager()
     }
     
     emit('session_started', {'session_id': session_id})
@@ -240,8 +243,18 @@ def handle_user_message(data):
     try:
         llm = sessions[session_id]['llm']
         auto_confirm = sessions[session_id]['auto_confirm']
+        memory_manager = sessions[session_id]['memory_manager']
         
-        msg = [{"type": "text", "text": user_input}]
+        # Load relevant memories as context
+        relevant_memories = memory_manager.get_memory_context(user_input, max_memories=3)
+        
+        # Prepare message with memory context if relevant memories exist
+        if relevant_memories != "No relevant memories found.":
+            context_msg = f"{relevant_memories}\n\n=== USER MESSAGE ===\n{user_input}"
+            msg = [{"type": "text", "text": context_msg}]
+        else:
+            msg = [{"type": "text", "text": user_input}]
+            
         output, tool_calls = llm(msg)
         
         # Send agent response
@@ -549,6 +562,51 @@ def execute_tool_call(tool_call):
             tool_use_id=tool_call["id"],
             content=[dict(type="text", text=output_text)]
         )
+    elif tool_call["name"] == "save_memory":
+        title = tool_call["input"]["title"]
+        content = tool_call["input"]["content"]
+        tags = tool_call["input"].get("tags", [])
+        output_text = save_memory(title, content, tags)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "search_memory":
+        query = tool_call["input"].get("query")
+        tags = tool_call["input"].get("tags")
+        limit = tool_call["input"].get("limit", 10)
+        output_text = search_memory(query, tags, limit)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "list_memories":
+        limit = tool_call["input"].get("limit", 20)
+        offset = tool_call["input"].get("offset", 0)
+        output_text = list_memories(limit, offset)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "get_memory":
+        memory_id = tool_call["input"]["memory_id"]
+        output_text = get_memory(memory_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "delete_memory":
+        memory_id = tool_call["input"]["memory_id"]
+        output_text = delete_memory(memory_id)
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
 
@@ -779,6 +837,102 @@ restart_bg_task_tool = {
             }
         },
         "required": ["task_id"]
+    }
+}
+
+# Memory tool definitions
+save_memory_tool = {
+    "name": "save_memory",
+    "description": "Save information to memory for future reference. Use this to store important facts, solutions, or insights that might be useful later.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "A descriptive title for the memory"
+            },
+            "content": {
+                "type": "string", 
+                "description": "The content to store in memory"
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional tags to categorize the memory"
+            }
+        },
+        "required": ["title", "content"]
+    }
+}
+
+search_memory_tool = {
+    "name": "search_memory",
+    "description": "Search stored memories by content, title, or tags. Use this to recall previously stored information.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search query to find relevant memories"
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional tags to filter memories"
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of memories to return (default: 10)"
+            }
+        }
+    }
+}
+
+list_memories_tool = {
+    "name": "list_memories",
+    "description": "List all stored memories with optional pagination.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Maximum number of memories to return (default: 20)"
+            },
+            "offset": {
+                "type": "integer", 
+                "description": "Number of memories to skip (default: 0)"
+            }
+        }
+    }
+}
+
+get_memory_tool = {
+    "name": "get_memory",
+    "description": "Retrieve a specific memory by its ID.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "memory_id": {
+                "type": "string",
+                "description": "The ID of the memory to retrieve"
+            }
+        },
+        "required": ["memory_id"]
+    }
+}
+
+delete_memory_tool = {
+    "name": "delete_memory",
+    "description": "Delete a memory by its ID.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "memory_id": {
+                "type": "string",
+                "description": "The ID of the memory to delete"
+            }
+        },
+        "required": ["memory_id"]
     }
 }
 
@@ -1455,6 +1609,112 @@ def read_file(file_path):
     except Exception as e:
         return f"Error reading file {file_path}: {str(e)}"
 
+def get_current_memory_manager():
+    """Get the memory manager for the current session."""
+    from flask import session as flask_session
+    session_id = flask_session.get('session_id')
+    if session_id and session_id in sessions:
+        return sessions[session_id]['memory_manager']
+    return MemoryManager()  # Fallback to default
+
+def save_memory(title, content, tags=None):
+    """Save a memory using the current session's memory manager."""
+    try:
+        memory_manager = get_current_memory_manager()
+        memory_id = memory_manager.save_memory(title, content, tags or [])
+        return f"Memory saved successfully with ID: {memory_id}\nTitle: {title}"
+    except Exception as e:
+        return f"Error saving memory: {str(e)}"
+
+def search_memory(query=None, tags=None, limit=10):
+    """Search memories using the current session's memory manager."""
+    try:
+        memory_manager = get_current_memory_manager()
+        memories = memory_manager.search_memories(query, tags, limit)
+        
+        if not memories:
+            return "No memories found matching the search criteria."
+        
+        result_lines = [f"Found {len(memories)} memories:"]
+        for memory in memories:
+            result_lines.append(f"\nID: {memory['id']}")
+            result_lines.append(f"Title: {memory['title']}")
+            if memory['tags']:
+                result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+            result_lines.append(f"Content: {memory['content']}")
+            result_lines.append(f"Created: {memory['created_at']}")
+            result_lines.append("---")
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error searching memories: {str(e)}"
+
+def list_memories(limit=20, offset=0):
+    """List memories using the current session's memory manager."""
+    try:
+        memory_manager = get_current_memory_manager()
+        memories = memory_manager.list_memories(limit, offset)
+        
+        if not memories:
+            return "No memories found."
+        
+        result_lines = [f"Listing {len(memories)} memories (limit: {limit}, offset: {offset}):"]
+        for memory in memories:
+            result_lines.append(f"\nID: {memory['id']}")
+            result_lines.append(f"Title: {memory['title']}")
+            if memory['tags']:
+                result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+            # Truncate content for list view
+            content_preview = memory['content'][:100] + "..." if len(memory['content']) > 100 else memory['content']
+            result_lines.append(f"Content: {content_preview}")
+            result_lines.append(f"Created: {memory['created_at']}")
+            result_lines.append("---")
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error listing memories: {str(e)}"
+
+def get_memory(memory_id):
+    """Get a specific memory using the current session's memory manager."""
+    try:
+        memory_manager = get_current_memory_manager()
+        memory = memory_manager.get_memory(memory_id)
+        
+        if not memory:
+            return f"Memory with ID {memory_id} not found."
+        
+        result_lines = [
+            f"Memory ID: {memory['id']}",
+            f"Title: {memory['title']}",
+            f"Content: {memory['content']}"
+        ]
+        
+        if memory['tags']:
+            result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+        
+        result_lines.extend([
+            f"Created: {memory['created_at']}",
+            f"Updated: {memory['updated_at']}",
+            f"Last Accessed: {memory['accessed_at']}"
+        ])
+        
+        return "\n".join(result_lines)
+    except Exception as e:
+        return f"Error retrieving memory: {str(e)}"
+
+def delete_memory(memory_id):
+    """Delete a memory using the current session's memory manager."""
+    try:
+        memory_manager = get_current_memory_manager()
+        success = memory_manager.delete_memory(memory_id)
+        
+        if success:
+            return f"Memory with ID {memory_id} deleted successfully."
+        else:
+            return f"Memory with ID {memory_id} not found or could not be deleted."
+    except Exception as e:
+        return f"Error deleting memory: {str(e)}"
+
 
 class LLM:
     def __init__(self, model):
@@ -1474,7 +1734,8 @@ class LLM:
             "- ipython: Execute Python code with rich output support\n"
             "- edit_file_diff: Apply unified diff patches to files\n"
             "- overwrite_file: Replace entire file contents\n"
-            "- Background task tools: create_bg_task, list_bg_tasks, kill_bg_task, logs_bg_task, restart_bg_task\n\n"
+            "- Background task tools: create_bg_task, list_bg_tasks, kill_bg_task, logs_bg_task, restart_bg_task\n"
+            "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n\n"
             
             "FILE EDITING GUIDELINES:\n"
             "- Use edit_file_diff for precise, contextual changes with unified diff format\n"
@@ -1489,10 +1750,19 @@ class LLM:
             
             "PYTHON ENVIRONMENT:\n"
             "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n"
-            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n" 
+            "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n"
+            
+            "MEMORY USAGE:\n"
+            "Use the memory tools to store and retrieve important information across conversations:\n"
+            "- save_memory: Store important facts, solutions, configurations, or insights\n"
+            "- search_memory: Find relevant information from previous sessions\n"
+            "- list_memories: Browse all stored memories\n"
+            "- get_memory: Retrieve a specific memory by ID\n"
+            "- delete_memory: Remove outdated or incorrect memories\n"
+            "Always check for relevant memories before starting complex tasks to leverage previous work.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, create_bg_task_tool, list_bg_tasks_tool, kill_bg_task_tool, logs_bg_task_tool, restart_bg_task_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),

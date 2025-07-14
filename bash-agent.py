@@ -12,6 +12,8 @@ from IPython.utils.capture import capture_output
 import io
 import contextlib
 
+from memory import MemoryManager
+
 def main():
     parser = argparse.ArgumentParser(description='LLM Agent with configurable prompt file')
     parser.add_argument('--prompt-file', type=str, default=None, required=False,
@@ -38,20 +40,46 @@ def main():
         print(f"\n\nAn error occurred: {str(e)}")
 
 def loop(llm, initial_user_input=None, auto_confirm=False, exit_on_user_input=False):
+    memory_manager = MemoryManager()
+    
     if initial_user_input:
-        msg = [{"type": "text", "text": initial_user_input}]
+        # Load relevant memories for initial input
+        relevant_memories = memory_manager.get_memory_context(initial_user_input, max_memories=3)
+        if relevant_memories != "No relevant memories found.":
+            context_msg = f"{relevant_memories}\n\n=== USER MESSAGE ===\n{initial_user_input}"
+            msg = [{"type": "text", "text": context_msg}]
+        else:
+            msg = [{"type": "text", "text": initial_user_input}]
     else:
-        msg = user_input()
+        user_msg = user_input()
         if exit_on_user_input:
             print("\nExiting after user input as requested by --exit-on-user-input flag.")
             raise SystemExit(0)
+        
+        # Load relevant memories for user input
+        user_text = user_msg[0]["text"]
+        relevant_memories = memory_manager.get_memory_context(user_text, max_memories=3)
+        if relevant_memories != "No relevant memories found.":
+            context_msg = f"{relevant_memories}\n\n=== USER MESSAGE ===\n{user_text}"
+            msg = [{"type": "text", "text": context_msg}]
+        else:
+            msg = user_msg
+            
     while True:
         output, tool_calls = llm(msg)
         print("Agent: ", output)
         if tool_calls:
             msg = [ handle_tool_call(tc, auto_confirm) for tc in tool_calls ]
         else:
-            msg = user_input()
+            user_msg = user_input()
+            # Load relevant memories for new user input
+            user_text = user_msg[0]["text"]
+            relevant_memories = memory_manager.get_memory_context(user_text, max_memories=3)
+            if relevant_memories != "No relevant memories found.":
+                context_msg = f"{relevant_memories}\n\n=== USER MESSAGE ===\n{user_text}"
+                msg = [{"type": "text", "text": context_msg}]
+            else:
+                msg = user_msg
 
 
 bash_tool = {
@@ -288,17 +316,102 @@ class LLM:
         else:
             prompt = ""
         self.system_prompt = (
-            """You are a helpful AI assistant with access to bash and sqlite tools.\n"""
+            """You are a helpful AI assistant with access to bash, sqlite, Python, file editing, and memory tools.\n"""
             "You can help the user by executing commands and interpreting the results.\n"
-            "Be careful with destructive commands and always explain what you're doing.\n"
-            "You have access to the bash tool which allows you to run shell commands, and the sqlite tool which allows you to run SQL queries on SQLite databases.\n"
+            "Be careful with destructive commands and always explain what you're doing.\n\n"
+            
+            "AVAILABLE TOOLS:\n"
+            "- bash: Run shell commands\n"
+            "- sqlite: Execute SQL queries on SQLite databases\n"  
+            "- ipython: Execute Python code with rich output support\n"
+            "- edit_file_diff: Apply unified diff patches to files\n"
+            "- overwrite_file: Replace entire file contents\n"
+            "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n\n"
+            
+            "SQLITE USAGE:\n"
             "For large SELECT queries, you can specify an 'output_json' file path in the sqlite tool input. If you do, write the full result to that file and only print errors or the first record in the response.\n"
-            "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n"
-            "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n\n"
+            "You can also set 'print_result' to true to print the results in the context window, even if output_json is specified. This is useful for letting you see and reason about the data in context.\n\n"
+            
+            "PYTHON ENVIRONMENT:\n"
+            "When generating plots in Python (e.g., with matplotlib), always save the plot to a file (such as .png) and mention the filename in your response. Do not attempt to display plots inline.\n"
             "The Python environment for the ipython tool includes: numpy, matplotlib, scikit-learn, ipykernel, torch, tqdm, gymnasium, torchvision, tensorboard, torch-tb-profiler, opencv-python, nbconvert, anthropic, seaborn, pandas, tenacity.\n\n"
+            
+            "MEMORY USAGE:\n"
+            "Use the memory tools to store and retrieve important information across conversations:\n"
+            "- save_memory: Store important facts, solutions, configurations, or insights\n"
+            "- search_memory: Find relevant information from previous sessions\n"
+            "- list_memories: Browse all stored memories\n"
+            "- get_memory: Retrieve a specific memory by ID\n"
+            "- delete_memory: Remove outdated or incorrect memories\n"
+            "Always check for relevant memories before starting complex tasks to leverage previous work.\n\n"
             + prompt
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool]
+        # Add memory tools
+        save_memory_tool = {
+            "name": "save_memory",
+            "description": "Save information to memory for future reference.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "A descriptive title for the memory"},
+                    "content": {"type": "string", "description": "The content to store in memory"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags to categorize the memory"}
+                },
+                "required": ["title", "content"]
+            }
+        }
+        
+        search_memory_tool = {
+            "name": "search_memory",
+            "description": "Search stored memories by content, title, or tags.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query to find relevant memories"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional tags to filter memories"},
+                    "limit": {"type": "integer", "description": "Maximum number of memories to return (default: 10)"}
+                }
+            }
+        }
+        
+        list_memories_tool = {
+            "name": "list_memories",
+            "description": "List all stored memories with optional pagination.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Maximum number of memories to return (default: 20)"},
+                    "offset": {"type": "integer", "description": "Number of memories to skip (default: 0)"}
+                }
+            }
+        }
+        
+        get_memory_tool = {
+            "name": "get_memory",
+            "description": "Retrieve a specific memory by its ID.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {"type": "string", "description": "The ID of the memory to retrieve"}
+                },
+                "required": ["memory_id"]
+            }
+        }
+        
+        delete_memory_tool = {
+            "name": "delete_memory",
+            "description": "Delete a memory by its ID.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "memory_id": {"type": "string", "description": "The ID of the memory to delete"}
+                },
+                "required": ["memory_id"]
+            }
+        }
+        
+        self.memory_manager = MemoryManager()
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
@@ -521,6 +634,129 @@ def handle_tool_call(tool_call, auto_confirm=False):
                 type="text",
                 text=output_text
             )]
+        )
+    elif tool_call["name"] == "save_memory":
+        title = tool_call["input"]["title"]
+        content = tool_call["input"]["content"]
+        tags = tool_call["input"].get("tags", [])
+        print(f"\nSaving memory: {title}")
+        memory_manager = MemoryManager()
+        try:
+            memory_id = memory_manager.save_memory(title, content, tags)
+            output_text = f"Memory saved successfully with ID: {memory_id}\nTitle: {title}"
+        except Exception as e:
+            output_text = f"Error saving memory: {str(e)}"
+        print(f"Memory output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "search_memory":
+        query = tool_call["input"].get("query")
+        tags = tool_call["input"].get("tags")
+        limit = tool_call["input"].get("limit", 10)
+        print(f"\nSearching memories: query='{query}', tags={tags}, limit={limit}")
+        memory_manager = MemoryManager()
+        try:
+            memories = memory_manager.search_memories(query, tags, limit)
+            if not memories:
+                output_text = "No memories found matching the search criteria."
+            else:
+                result_lines = [f"Found {len(memories)} memories:"]
+                for memory in memories:
+                    result_lines.append(f"\nID: {memory['id']}")
+                    result_lines.append(f"Title: {memory['title']}")
+                    if memory['tags']:
+                        result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+                    result_lines.append(f"Content: {memory['content']}")
+                    result_lines.append(f"Created: {memory['created_at']}")
+                    result_lines.append("---")
+                output_text = "\n".join(result_lines)
+        except Exception as e:
+            output_text = f"Error searching memories: {str(e)}"
+        print(f"Search output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "list_memories":
+        limit = tool_call["input"].get("limit", 20)
+        offset = tool_call["input"].get("offset", 0)
+        print(f"\nListing memories: limit={limit}, offset={offset}")
+        memory_manager = MemoryManager()
+        try:
+            memories = memory_manager.list_memories(limit, offset)
+            if not memories:
+                output_text = "No memories found."
+            else:
+                result_lines = [f"Listing {len(memories)} memories (limit: {limit}, offset: {offset}):"]
+                for memory in memories:
+                    result_lines.append(f"\nID: {memory['id']}")
+                    result_lines.append(f"Title: {memory['title']}")
+                    if memory['tags']:
+                        result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+                    content_preview = memory['content'][:100] + "..." if len(memory['content']) > 100 else memory['content']
+                    result_lines.append(f"Content: {content_preview}")
+                    result_lines.append(f"Created: {memory['created_at']}")
+                    result_lines.append("---")
+                output_text = "\n".join(result_lines)
+        except Exception as e:
+            output_text = f"Error listing memories: {str(e)}"
+        print(f"List output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "get_memory":
+        memory_id = tool_call["input"]["memory_id"]
+        print(f"\nGetting memory: {memory_id}")
+        memory_manager = MemoryManager()
+        try:
+            memory = memory_manager.get_memory(memory_id)
+            if not memory:
+                output_text = f"Memory with ID {memory_id} not found."
+            else:
+                result_lines = [
+                    f"Memory ID: {memory['id']}",
+                    f"Title: {memory['title']}",
+                    f"Content: {memory['content']}"
+                ]
+                if memory['tags']:
+                    result_lines.append(f"Tags: {', '.join(memory['tags'])}")
+                result_lines.extend([
+                    f"Created: {memory['created_at']}",
+                    f"Updated: {memory['updated_at']}",
+                    f"Last Accessed: {memory['accessed_at']}"
+                ])
+                output_text = "\n".join(result_lines)
+        except Exception as e:
+            output_text = f"Error retrieving memory: {str(e)}"
+        print(f"Get output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "delete_memory":
+        memory_id = tool_call["input"]["memory_id"]
+        print(f"\nDeleting memory: {memory_id}")
+        memory_manager = MemoryManager()
+        try:
+            success = memory_manager.delete_memory(memory_id)
+            if success:
+                output_text = f"Memory with ID {memory_id} deleted successfully."
+            else:
+                output_text = f"Memory with ID {memory_id} not found or could not be deleted."
+        except Exception as e:
+            output_text = f"Error deleting memory: {str(e)}"
+        print(f"Delete output:\n{output_text}")
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
         )
     else:
         raise Exception(f"Unsupported tool: {tool_call['name']}")
