@@ -155,7 +155,7 @@ class GitHubRAG:
         
         return chunked_docs
     
-    def index_repository(self, repo_url: str, include_extensions: List[str] = None, ignore_dirs: List[str] = None) -> Dict[str, Any]:
+    def index_repository(self, repo_url: str, include_extensions: List[str] = None, ignore_dirs: List[str] = None, progress_callback=None) -> Dict[str, Any]:
         """Index a GitHub repository for RAG queries."""
         from langchain_chroma import Chroma
         
@@ -175,9 +175,13 @@ class GitHubRAG:
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Clone repository
+                if progress_callback:
+                    progress_callback({"step": "cloning", "progress": 10, "message": f"Cloning repository {repo_name}..."})
                 repo_path = self.clone_github_repo(repo_url, temp_dir)
                 
                 # Get documents
+                if progress_callback:
+                    progress_callback({"step": "scanning", "progress": 25, "message": "Scanning repository files..."})
                 documents = self.get_repository_files(repo_path, ignore_dirs, include_extensions)
                 
                 if not documents:
@@ -187,9 +191,13 @@ class GitHubRAG:
                     }
                 
                 # Split documents
+                if progress_callback:
+                    progress_callback({"step": "chunking", "progress": 50, "message": f"Processing {len(documents)} files into chunks..."})
                 chunked_docs = self.split_documents(documents)
                 
                 # Create vector store
+                if progress_callback:
+                    progress_callback({"step": "embedding", "progress": 75, "message": f"Generating embeddings for {len(chunked_docs)} chunks..."})
                 vector_store = Chroma.from_documents(
                     documents=chunked_docs,
                     embedding=self.embeddings,
@@ -207,6 +215,9 @@ class GitHubRAG:
                 }
                 
                 self._save_repository_index()
+                
+                if progress_callback:
+                    progress_callback({"step": "complete", "progress": 100, "message": f"Successfully indexed {repo_name}!"})
                 
                 return {
                     "success": True,

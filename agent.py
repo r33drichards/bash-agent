@@ -2034,10 +2034,18 @@ def github_rag_index(repo_url, include_extensions=None, ignore_dirs=None):
     """Index a GitHub repository for RAG queries."""
     try:
         github_rag = get_current_github_rag()
+        
+        # Create progress callback that emits to web client
+        def progress_callback(progress_data):
+            session_id = get_current_session_id()
+            if session_id:
+                socketio.emit('rag_index_progress', progress_data, room=session_id)
+        
         result = github_rag.index_repository(
             repo_url=repo_url,
             include_extensions=include_extensions,
-            ignore_dirs=ignore_dirs
+            ignore_dirs=ignore_dirs,
+            progress_callback=progress_callback
         )
         
         if result['success']:

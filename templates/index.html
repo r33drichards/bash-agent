@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <style>
         * {
@@ -349,6 +350,100 @@
             word-wrap: break-word;
         }
 
+        /* Markdown styling for agent messages */
+        .message.agent .message-content h1,
+        .message.agent .message-content h2,
+        .message.agent .message-content h3,
+        .message.agent .message-content h4,
+        .message.agent .message-content h5,
+        .message.agent .message-content h6 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        .message.agent .message-content h1 { font-size: 18px; }
+        .message.agent .message-content h2 { font-size: 16px; }
+        .message.agent .message-content h3 { font-size: 15px; }
+        .message.agent .message-content h4 { font-size: 14px; }
+        .message.agent .message-content h5 { font-size: 13px; }
+        .message.agent .message-content h6 { font-size: 12px; }
+
+        .message.agent .message-content p {
+            margin: 8px 0;
+            white-space: normal;
+        }
+
+        .message.agent .message-content ul,
+        .message.agent .message-content ol {
+            margin: 8px 0 8px 20px;
+            white-space: normal;
+        }
+
+        .message.agent .message-content li {
+            margin: 4px 0;
+        }
+
+        .message.agent .message-content code {
+            background-color: #161b22;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 12px;
+            color: #f85149;
+        }
+
+        .message.agent .message-content pre {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .message.agent .message-content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            border-radius: 0;
+        }
+
+        .message.agent .message-content blockquote {
+            border-left: 4px solid #21262d;
+            padding-left: 12px;
+            margin: 8px 0;
+            color: #7d8590;
+        }
+
+        .message.agent .message-content table {
+            border-collapse: collapse;
+            margin: 8px 0;
+            border: 1px solid #21262d;
+        }
+
+        .message.agent .message-content th,
+        .message.agent .message-content td {
+            border: 1px solid #21262d;
+            padding: 6px 12px;
+            text-align: left;
+        }
+
+        .message.agent .message-content th {
+            background-color: #161b22;
+            font-weight: 600;
+        }
+
+        .message.agent .message-content a {
+            color: #79c0ff;
+            text-decoration: none;
+        }
+
+        .message.agent .message-content a:hover {
+            text-decoration: underline;
+        }
+
         .message-timestamp {
             font-size: 11px;
             color: #7d8590;
@@ -580,6 +675,43 @@
 
         .messages::-webkit-scrollbar-thumb:hover {
             background: #30363d;
+        }
+
+        .rag-progress {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .rag-progress-header {
+            font-weight: 600;
+            color: #79c0ff;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .rag-progress-bar {
+            background-color: #0d1117;
+            border-radius: 6px;
+            height: 8px;
+            overflow: hidden;
+            margin-bottom: 8px;
+            border: 1px solid #21262d;
+        }
+
+        .rag-progress-fill {
+            background: linear-gradient(90deg, #238636, #2ea043);
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 6px;
+            width: 0%;
+        }
+
+        .rag-progress-message {
+            font-size: 12px;
+            color: #7d8590;
         }
 
         @media (max-width: 768px) {
@@ -820,13 +952,28 @@
                             type === 'agent' ? 'Agent' : 
                             type === 'system' ? 'System' : 'Error';
             
+            // Render agent messages as markdown, others as escaped HTML
+            let contentHtml;
+            if (type === 'agent') {
+                contentHtml = marked.parse(content);
+            } else {
+                contentHtml = escapeHtml(content);
+            }
+            
             messageEl.innerHTML = `
                 <div class="message-header">
                     ${typeLabel}
                     <span class="message-timestamp">${time}</span>
                 </div>
-                <div class="message-content">${escapeHtml(content)}</div>
+                <div class="message-content">${contentHtml}</div>
             `;
+            
+            // Apply syntax highlighting to code blocks in markdown
+            if (type === 'agent') {
+                messageEl.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
             
             messages.appendChild(messageEl);
             messages.scrollTop = messages.scrollHeight;
@@ -1195,6 +1342,50 @@
         socket.on('token_usage_update', function(data) {
             animateTokenUpdate(data.total_tokens, data.total_input_tokens, data.total_output_tokens);
         });
+
+        socket.on('rag_index_progress', function(data) {
+            updateRagProgress(data);
+        });
+
+        function updateRagProgress(progressData) {
+            let progressEl = document.getElementById('rag-progress');
+            
+            if (!progressEl) {
+                // Create progress indicator
+                progressEl = document.createElement('div');
+                progressEl.id = 'rag-progress';
+                progressEl.className = 'rag-progress';
+                progressEl.innerHTML = `
+                    <div class="rag-progress-header">🔍 Indexing Repository</div>
+                    <div class="rag-progress-bar">
+                        <div class="rag-progress-fill" id="rag-progress-fill"></div>
+                    </div>
+                    <div class="rag-progress-message" id="rag-progress-message">Starting...</div>
+                `;
+                messages.appendChild(progressEl);
+                messages.scrollTop = messages.scrollHeight;
+            }
+            
+            // Update progress bar and message
+            const progressFill = document.getElementById('rag-progress-fill');
+            const progressMessage = document.getElementById('rag-progress-message');
+            
+            if (progressFill && progressMessage) {
+                progressFill.style.width = progressData.progress + '%';
+                progressMessage.textContent = progressData.message;
+            }
+            
+            // Remove progress indicator when complete
+            if (progressData.progress >= 100) {
+                setTimeout(() => {
+                    if (progressEl && progressEl.parentNode) {
+                        progressEl.remove();
+                    }
+                }, 2000);
+            }
+            
+            messages.scrollTop = messages.scrollHeight;
+        }
 
         // Initialize
         sendButton.disabled = true;
