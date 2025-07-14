@@ -5,6 +5,7 @@ GitHub RAG Tool - Integration for bash-agent to index and query GitHub repositor
 
 import os
 import sys
+import uuid
 import tempfile
 import subprocess
 from pathlib import Path
@@ -251,6 +252,105 @@ class GitHubRAG:
                 "error": str(e)
             }
     
+    def index_local_directory(self, dir_path: str, collection_name: str = None, include_extensions: List[str] = None, ignore_dirs: List[str] = None) -> Dict[str, Any]:
+        """Index a local directory for RAG queries.
+        
+        Args:
+            dir_path: Path to the local directory to index
+            collection_name: Optional name for the collection, will be auto-generated if not provided
+            include_extensions: Optional list of file extensions to include (e.g., ['py', 'js', 'md'])
+            ignore_dirs: Optional list of directories to ignore
+            
+        Returns:
+            Dictionary with information about the indexed directory
+        """
+        from langchain_chroma import Chroma
+        
+        # Validate directory path
+        if not os.path.exists(dir_path):
+            return {
+                "success": False,
+                "error": f"Directory does not exist: {dir_path}"
+            }
+        
+        if not os.path.isdir(dir_path):
+            return {
+                "success": False,
+                "error": f"Path is not a directory: {dir_path}"
+            }
+        
+        # Generate directory name from path for repository tracking
+        dir_name = os.path.basename(os.path.abspath(dir_path))
+        
+        # Generate a collection name
+        if collection_name is None:
+            # Create a unique collection name based on directory name
+            collection_name = f"local_{dir_name}_{str(uuid.uuid4())[:8]}".replace('-', '_').replace('.', '_')
+        else:
+            # Clean up provided collection name
+            collection_name = collection_name.replace('-', '_').replace('.', '_')
+            if not collection_name.startswith('local_'):
+                collection_name = f"local_{collection_name}"
+        
+        # Check if already indexed with this collection name
+        if collection_name in self.repositories:
+            return {
+                "success": True,
+                "message": f"Directory {dir_name} is already indexed as {collection_name}",
+                "collection_name": collection_name,
+                "dir_name": dir_name
+            }
+        
+        try:
+            # Get documents directly from the local directory
+            documents = self.get_repository_files(dir_path, ignore_dirs, include_extensions)
+            
+            if not documents:
+                return {
+                    "success": False,
+                    "error": "No files found in directory"
+                }
+            
+            # Split documents
+            chunked_docs = self.split_documents(documents)
+            
+            # Create vector store
+            vector_store = Chroma.from_documents(
+                documents=chunked_docs,
+                embedding=self.embeddings,
+                persist_directory=self.persist_directory,
+                collection_name=collection_name
+            )
+            
+            # Update repository index with local directory info
+            self.repositories[collection_name] = {
+                "repo_url": f"local://{os.path.abspath(dir_path)}",  # Use custom URI scheme for local dirs
+                "repo_name": dir_name,
+                "document_count": len(documents),
+                "chunk_count": len(chunked_docs),
+                "indexed_at": str(os.path.getctime(self.persist_directory)),
+                "is_local": True  # Flag to identify this as a local directory
+            }
+            
+            self._save_repository_index()
+            
+            return {
+                "success": True,
+                "message": f"Successfully indexed local directory {dir_name}",
+                "collection_name": collection_name,
+                "dir_name": dir_name,
+                "document_count": len(documents),
+                "chunk_count": len(chunked_docs),
+                "directory_path": os.path.abspath(dir_path)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error indexing local directory: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
     def query_repository(self, collection_name: str, question: str, max_results: int = 5) -> Dict[str, Any]:
         """Query an indexed repository."""
         from langchain_chroma import Chroma
@@ -348,25 +448,35 @@ Answer:"""
     
     def list_repositories(self) -> List[Dict[str, Any]]:
         """List all indexed repositories."""
-        return [
-            {
-                "collection_name": collection_name,
-                "repo_name": info["repo_name"],
-                "repo_url": info["repo_url"],
-                "document_count": info["document_count"],
-                "chunk_count": info["chunk_count"]
+        result = []
+        for collection_name, info in self.repositories.items():
+            repo_info = {
+                 "collection_name": collection_name,
+                 "repo_name": info["repo_name"],
+                 "repo_url": info["repo_url"],
+                 "document_count": info["document_count"],
+                 "chunk_count": info["chunk_count"],
+                 "is_local": info.get("is_local", False)  # Flag to identify local directories
             }
-            for collection_name, info in self.repositories.items()
-        ]
+            result.append(repo_info)
+        return result
     
     def get_repository_memory_context(self) -> str:
         """Get memory context about indexed repositories."""
         if not self.repositories:
             return "No GitHub repositories have been indexed for RAG queries."
         
-        context_parts = ["Available GitHub repositories indexed for RAG queries:"]
+        context_parts = ["Available repositories indexed for RAG queries:"]
         for collection_name, info in self.repositories.items():
-            context_parts.append(f"- {info['repo_name']} ({info['repo_url']}) - {info['document_count']} files indexed")
+            # Format differently based on whether it's a local directory or GitHub repo
+            if info.get("is_local", False):
+                local_path = info['repo_url'].replace('local://', '')
+                context_parts.append(
+                    f"- LOCAL: {info['repo_name']} (path: {local_path}) - {info['document_count']} files indexed - collection: {collection_name}"
+                )
+            else:
+                context_parts.append(
+                    f"- GITHUB: {info['repo_name']} ({info['repo_url']}) - {info['document_count']} files indexed - collection: {collection_name}")
         
         context_parts.append("\nYou can query these repositories using the github_rag_query tool.")
         return "\n".join(context_parts)

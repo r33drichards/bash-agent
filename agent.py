@@ -24,6 +24,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from memory import MemoryManager
 from todos import TodoManager
 from github_rag import GitHubRAG
+from local_rag import github_rag_index_local
 from monaco_routes import monaco_bp
 
 # Get the directory where this script is located
@@ -670,6 +671,8 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)]
         )
     elif tool_call["name"] == "github_rag_index":
+    elif tool_call["name"] == "github_rag_index_local":
+        output_text = github_rag_index_local(dir_path, collection_name, include_extensions, ignore_dirs)
         repo_url = tool_call["input"]["repo_url"]
         include_extensions = tool_call["input"].get("include_extensions")
         ignore_dirs = tool_call["input"].get("ignore_dirs")
@@ -1193,6 +1196,26 @@ github_rag_query_tool = {
 }
 
 github_rag_list_tool = {
+github_rag_index_local_tool = {
+    "name": "github_rag_index_local",
+    "description": "Index a local directory for RAG (Retrieval Augmented Generation) queries. This tool processes the files in a local directory and creates a searchable vector database for code analysis.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "dir_path": {
+                "type": "string",
+                "description": "Local directory path to index (absolute or relative path)"
+            },
+            "collection_name": {
+                "type": "string",
+                "description": "Optional name for the collection. If not provided, one will be generated automatically."
+            },
+            "include_extensions": {"type": "array", "items": {"type": "string"}, "description": "Optional list of file extensions to include (e.g., ["py", "js", "md"]). If not specified, all text files are included."},
+            "ignore_dirs": {"type": "array", "items": {"type": "string"}, "description": "Optional list of directories to ignore (e.g., ["node_modules", "venv"]). Default includes common ignore patterns."}
+        },
+        "required": ["dir_path"]
+    }
+}
     "name": "github_rag_list",
     "description": "List all indexed GitHub repositories and their collection names for querying.",
     "input_schema": {
@@ -2179,6 +2202,7 @@ class LLM:
             "ALWAYS create todos for multi-step tasks and update states as you work. Use 'in_progress' for current work.\n\n"
             
             "GITHUB RAG (REPOSITORY ANALYSIS):\n"
+            "- github_rag_index_local: Index a local directory for searchable analysis\n"
             "Use GitHub RAG tools to index and query external repositories for code analysis:\n"
             "- github_rag_index: Clone and index a GitHub repository for searchable analysis\n"
             "- github_rag_query: Ask questions about indexed repositories with citations\n"
@@ -2186,7 +2210,7 @@ class LLM:
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool, github_rag_index_local_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
