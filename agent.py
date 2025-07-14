@@ -24,6 +24,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from memory import MemoryManager
 from todos import TodoManager
 from github_rag import GitHubRAG
+from github_auth_tool import execute_github_clone, github_clone_tool
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -703,6 +704,16 @@ def execute_tool_call(tool_call):
         )
     elif tool_call["name"] == "github_rag_list":
         output_text = github_rag_list()
+        return dict(
+            type="tool_result",
+            tool_use_id=tool_call["id"],
+            content=[dict(type="text", text=output_text)]
+        )
+    elif tool_call["name"] == "github_clone":
+        repo_url = tool_call["input"]["repo_url"]
+        target_dir = tool_call["input"].get("target_dir")
+        shallow = tool_call["input"].get("shallow", True)
+        output_text = execute_github_clone(repo_url, target_dir, shallow)
         return dict(
             type="tool_result",
             tool_use_id=tool_call["id"],
@@ -2324,6 +2335,7 @@ class LLM:
             "- search_files: Search for text patterns across files with line numbers (supports regex, file filters, recursive directory search)\n"
             "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n"
             "- Todo/Task tools: create_todo, update_todo, list_todos, get_kanban_board, search_todos, get_todo, delete_todo, get_todo_stats\n\n"
+            "- github_clone: Clone a GitHub repository with device authentication\n\n"
             
             "FILE EDITING GUIDELINES:\n"
             "- Use edit_file_diff for precise, contextual changes with unified diff format\n"
@@ -2367,7 +2379,7 @@ class LLM:
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
             + (app.config['SYSTEM_PROMPT'] if 'SYSTEM_PROMPT' in app.config and app.config['SYSTEM_PROMPT'] else "")
         )
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool, github_clone_tool]
 
     @retry(
         retry=retry_if_exception_type((RateLimitError, APIError)),
