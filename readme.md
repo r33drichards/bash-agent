@@ -29,7 +29,7 @@ Set your Anthropic API key and run the agent with Nix:
 
 ```sh
 export ANTHROPIC_API_KEY=your-anthropic-key
-nix run github:r33drichards/bash-agent
+nix run github:r33drichards/bash-agent#webagent -- --working-dir /Users/robertwendt/data-alchemist --port 5556 --metadata-dir `pwd`/meta
 ```
 
 By default, the agent uses `prompt.md` as the system prompt. You can specify a custom prompt file with the `--prompt-file` flag:
