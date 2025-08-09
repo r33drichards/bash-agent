@@ -10,9 +10,6 @@ docker run --pull always -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
     --initial-user-input "what is the capital of france"
 ```
 
-
-
-
 ## Quickstart
 
 ### Prerequisites
@@ -29,55 +26,8 @@ Set your Anthropic API key and run the agent with Nix:
 
 ```sh
 export ANTHROPIC_API_KEY=your-anthropic-key
-nix run github:r33drichards/bash-agent#webagent -- --working-dir /Users/robertwendt/data-alchemist --port 5556 --metadata-dir `pwd`/meta
+nix run github:r33drichards/bash-agent#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta
 ```
-
-By default, the agent uses `prompt.md` as the system prompt. You can specify a custom prompt file with the `--prompt-file` flag:
-
-```sh
-nix run github:r33drichards/bash-agent
-```
-
-You can also provide an initial user input to start the conversation:
-
-```sh
-nix run github:r33drichards/bash-agent -- --initial-user-input "List all Python files in the current directory"
-```
-
-Or, if running directly with Python:
-
-```sh
-export ANTHROPIC_API_KEY=your-anthropic-key
-python agent.py
-python agent.py --initial-user-input "Create a simple Python script"
-```
-
-
-## Running with Docker
-
-using the pre built docker image:
-
-```sh
-docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd):/app -w /app wholelottahoopla/webagent:35aa33049d837d2297475291d6e20b4f8545239c \
-    --initial-user-input "what is the capital of france"
-```
-
-or building the image yourself:
-
-```sh
-nix build .#streamLayered
-./result | docker load
-docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd):/app -w /app bash-agent:latest \
-    --initial-user-input "what is the capital of france"
-```
-
-
-
-### Command Line Arguments
-
-- `--initial-user-input`: Initial user input to start the conversation (default: None)
 
 ### What It Does
 
@@ -95,41 +45,6 @@ Before executing any tool, the agent will:
 - Ask for confirmation
 - For file edits, show a preview of the changes
 
-### Available Python Libraries
-
-The IPython environment includes these pre-installed libraries:
-- numpy
-- matplotlib
-- scikit-learn
-- torch (PyTorch)
-- pandas
-- seaborn
-- opencv-python
-- gymnasium
-- tensorboard
-- And more...
-
-### Example Usage
-
-#### Basic Bash Command
-```sh
-$ nix run github:r33drichards/bash-agent
-=== LLM Agent Loop with Claude and Bash Tool ===
-Type 'exit' to end the conversation.
-
-You: echo Hello World
-Agent: About to execute bash command:
-
-echo Hello World
-Enter to confirm or x to cancel
-Executing bash command: echo Hello World
-Bash output:
-STDOUT:
-Hello World
-STDERR:
-
-EXIT CODE: 0
-```
 
 ### Local Development
 
