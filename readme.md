@@ -59,7 +59,7 @@ using the pre built docker image:
 
 ```sh
 docker run -it -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd):/app -w /app wholelottahoopla/agent:ce6f5b4d19bd142a45784139a187e24ebc44b933 \
+    -v $(pwd):/app -w /app wholelottahoopla/webagent:35aa33049d837d2297475291d6e20b4f8545239c \
     --initial-user-input "what is the capital of france"
 ```
 

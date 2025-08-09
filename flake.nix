@@ -96,6 +96,7 @@
             langchain-openai
             langchain-chroma
             langchain-core
+            fpdf
           ]);
 
         # Web agent entrypoint
