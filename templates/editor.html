@@ -207,6 +207,86 @@
             border-left: 3px solid #f85149;
         }
 
+        /* Tool execution styling */
+        .tool-execution {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 8px;
+            margin: 16px 0;
+            overflow: hidden;
+        }
+
+        .tool-execution-header {
+            background-color: #21262d;
+            padding: 12px 16px;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            color: #f0f6fc;
+            font-size: 14px;
+        }
+
+        .tool-execution-code {
+            background-color: #0d1117;
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .tool-execution-code pre {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+        }
+
+        .tool-execution-result {
+            background-color: #0d1117;
+            padding: 16px;
+        }
+
+        .tool-execution-result pre {
+            margin: 0;
+            padding: 12px;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #e6edf3;
+        }
+
+        .tool-execution-result-header {
+            font-weight: 600;
+            color: #79c0ff;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tool-execution-code-header {
+            font-weight: 600;
+            color: #7ee787;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .tool-execution-plots {
+            margin-top: 16px;
+        }
+
+        .tool-execution-plots-header {
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
         .message-header {
             font-weight: 600;
             margin-bottom: 4px;
@@ -668,6 +748,79 @@
             hideTyping();
         }
 
+        function addToolExecution(data) {
+            const toolExecutionEl = document.createElement('div');
+            toolExecutionEl.className = 'tool-execution';
+            toolExecutionEl.id = `tool-execution-${Date.now()}`;
+            
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const languageClass = data.language || 'plaintext';
+            
+            toolExecutionEl.innerHTML = `
+                <div class="tool-execution-header">
+                    🔧 ${data.tool_name.toUpperCase()} Tool Execution
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                ${data.code ? `
+                <div class="tool-execution-code">
+                    <div class="tool-execution-code-header">Code:</div>
+                    <pre><code class="language-${languageClass}">${escapeHtml(data.code)}</code></pre>
+                </div>
+                ` : ''}
+                <div class="tool-execution-result" style="display: none;">
+                    <div class="tool-execution-result-header">Result:</div>
+                    <pre id="result-${toolExecutionEl.id}"></pre>
+                </div>
+            `;
+            
+            messages.appendChild(toolExecutionEl);
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Apply syntax highlighting
+            if (data.code) {
+                hljs.highlightAll();
+            }
+            
+            // Store reference for result update
+            currentToolExecution = toolExecutionEl;
+            hideTyping();
+        }
+
+        function updateToolExecutionResult(data) {
+            if (currentToolExecution) {
+                const resultDiv = currentToolExecution.querySelector('.tool-execution-result');
+                const resultPre = currentToolExecution.querySelector(`#result-${currentToolExecution.id}`);
+                
+                if (resultDiv && resultPre) {
+                    resultDiv.style.display = 'block';
+                    resultPre.textContent = data.result;
+                    
+                    // Add plots if available
+                    if (data.plots && data.plots.length > 0) {
+                        const plotsDiv = document.createElement('div');
+                        plotsDiv.className = 'tool-execution-plots';
+                        plotsDiv.innerHTML = `
+                            <div class="tool-execution-plots-header">📊 Generated Plots:</div>
+                        `;
+                        
+                        data.plots.forEach((plotData, index) => {
+                            const plotImg = document.createElement('img');
+                            plotImg.className = 'plot-image';
+                            plotImg.src = `data:image/png;base64,${plotData}`;
+                            plotImg.alt = `Plot ${index + 1}`;
+                            plotsDiv.appendChild(plotImg);
+                        });
+                        
+                        resultDiv.appendChild(plotsDiv);
+                    }
+                    
+                    messages.scrollTop = messages.scrollHeight;
+                }
+                
+                currentToolExecution = null;
+            }
+        }
+
         function addToolConfirmation(data) {
             const confirmationEl = document.createElement('div');
             confirmationEl.className = 'tool-confirmation';
@@ -819,6 +972,14 @@
 
         socket.on('tool_confirmation', function(data) {
             addToolConfirmation(data);
+        });
+
+        socket.on('tool_execution_start', function(data) {
+            addToolExecution(data);
+        });
+
+        socket.on('tool_execution_result', function(data) {
+            updateToolExecutionResult(data);
         });
 
         socket.on('error', function(data) {
