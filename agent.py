@@ -23,6 +23,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 
 from memory import MemoryManager
 from todos import TodoManager
+from file_utils import dir_tree, read_file, write_file
 from github_rag import GitHubRAG
 
 # Get the directory where this script is located
@@ -133,11 +134,53 @@ def main():
     print(f"Working directory: {os.getcwd()}")
     print("Claude Code-like interface available in your browser")
     
-    socketio.run(app, host=args.host, port=args.port, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host=args.host, port=args.port, debug=False, allow_unsafe_werkzeug=True)
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/editor')
+def editor():
+    return render_template('editor.html')
+
+@app.route('/api/directory-tree')
+def get_directory_tree():
+    """API endpoint to get the directory tree structure"""
+    try:
+        # Use the working directory or current directory
+        base_path = app.config.get('WORKING_DIR') or os.getcwd()
+        tree = dir_tree(base_path)
+        return jsonify(tree)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/file-content')
+def get_file_content():
+    """API endpoint to get the content of a file"""
+    file_path = request.args.get('path')
+    if not file_path:
+        return jsonify({'error': 'No file path provided'}), 400
+    
+    success, content = read_file(file_path)
+    if success:
+        return content
+    else:
+        return jsonify({'error': content}), 404
+
+@app.route('/api/save-file', methods=['POST'])
+def save_file():
+    """API endpoint to save content to a file"""
+    data = request.get_json()
+    if not data or 'path' not in data or 'content' not in data:
+        return jsonify({'success': False, 'error': 'Invalid request data'}), 400
+    
+    file_path = data['path']
+    content = data['content']
+    
+    success, message = write_file(content, file_path)
+    
+    return jsonify({'success': success, 'message': message})
 
 @app.route('/api/conversation-history')
 def get_conversation_history():

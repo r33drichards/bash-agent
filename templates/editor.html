@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bash Agent - Code Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <!-- Require.js for Monaco editor -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js"></script>
+    <!-- jQuery for Monaco editor operations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background-color: #0d1117;
+            color: #e6edf3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #7d8590;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* Split Container Styles */
+        .split-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .file-browser {
+            width: 200px;
+            background-color: #161b22;
+            border-right: 1px solid #21262d;
+            overflow-y: auto;
+            padding: 10px 0;
+        }
+
+        .file-browser-header {
+            padding: 10px;
+            font-weight: 600;
+            color: #f0f6fc;
+            border-bottom: 1px solid #21262d;
+            margin-bottom: 10px;
+        }
+
+        .directory-tree {
+            list-style: none;
+            padding-left: 10px;
+        }
+
+        .directory-tree li {
+            padding: 2px 5px;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .directory-tree li:hover {
+            background-color: #21262d;
+        }
+
+        .directory-tree .folder:before {
+            content: "📁 ";
+        }
+
+        .directory-tree .file:before {
+            content: "📄 ";
+        }
+
+        .editor-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .editor-tabs {
+            display: flex;
+            background-color: #161b22;
+            border-bottom: 1px solid #21262d;
+        }
+
+        .editor-tab {
+            padding: 8px 16px;
+            background-color: #21262d;
+            border-right: 1px solid #30363d;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+        }
+
+        .editor-tab.active {
+            background-color: #0d1117;
+            border-bottom: 2px solid #238636;
+        }
+
+        .editor-tab-close {
+            margin-left: 8px;
+            opacity: 0.5;
+        }
+
+        .editor-tab-close:hover {
+            opacity: 1;
+        }
+
+        .editor-container {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #monaco-editor {
+            width: 100%;
+            height: 100%;
+        }
+
+        .editor-statusbar {
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 4px 16px;
+            font-size: 12px;
+            color: #7d8590;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .chat-pane {
+            width: 40%;
+            border-left: 1px solid #21262d;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        .message.user {
+            color: #79c0ff;
+        }
+
+        .message.agent {
+            color: #e6edf3;
+        }
+
+        .message.system {
+            color: #f85149;
+            font-style: italic;
+        }
+
+        .message.error {
+            color: #f85149;
+            background-color: #161b22;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #f85149;
+        }
+
+        .message-header {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 14px;
+        }
+
+        .message-content {
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* Markdown styling for agent messages */
+        .message.agent .message-content h1,
+        .message.agent .message-content h2,
+        .message.agent .message-content h3,
+        .message.agent .message-content h4,
+        .message.agent .message-content h5,
+        .message.agent .message-content h6 {
+            margin: 16px 0 8px 0;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        .message.agent .message-content h1 { font-size: 18px; }
+        .message.agent .message-content h2 { font-size: 16px; }
+        .message.agent .message-content h3 { font-size: 15px; }
+        .message.agent .message-content h4 { font-size: 14px; }
+        .message.agent .message-content h5 { font-size: 13px; }
+        .message.agent .message-content h6 { font-size: 12px; }
+
+        .message.agent .message-content p {
+            margin: 8px 0;
+            white-space: normal;
+        }
+
+        .message.agent .message-content ul,
+        .message.agent .message-content ol {
+            margin: 8px 0 8px 20px;
+            white-space: normal;
+        }
+
+        .message.agent .message-content li {
+            margin: 4px 0;
+        }
+
+        .message.agent .message-content code {
+            background-color: #161b22;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 12px;
+            color: #f85149;
+        }
+
+        .message.agent .message-content pre {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 8px 0;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .message.agent .message-content pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+            border-radius: 0;
+        }
+
+        .typing-indicator {
+            display: none;
+            color: #7d8590;
+            font-style: italic;
+            margin-bottom: 16px;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        .input-container {
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .input-field {
+            flex: 1;
+            background-color: #0d1117;
+            border: 1px solid #21262d;
+            color: #e6edf3;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-family: inherit;
+            border-radius: 6px;
+            outline: none;
+            resize: none;
+            min-height: 44px;
+            max-height: 200px;
+        }
+
+        .input-field:focus {
+            border-color: #1f6feb;
+            box-shadow: 0 0 0 2px rgba(31, 111, 235, 0.3);
+        }
+
+        .send-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover {
+            background-color: #2ea043;
+        }
+
+        .send-button:disabled {
+            background-color: #21262d;
+            color: #7d8590;
+            cursor: not-allowed;
+        }
+
+        /* Splitter Style */
+        .splitter {
+            width: 5px;
+            background-color: #21262d;
+            cursor: col-resize;
+        }
+
+        .tool-confirmation {
+            background-color: #161b22;
+            border: 1px solid #f85149;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .tool-confirmation-header {
+            font-weight: 600;
+            color: #f85149;
+            margin-bottom: 8px;
+        }
+
+        .tool-confirmation-content {
+            color: #e6edf3;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .tool-confirmation-buttons {
+            display: flex;
+            gap: 8px;
+        }
+
+        .confirm-button {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .cancel-button {
+            background-color: #da3633;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        /* Resizing handle for the entire chat pane */
+        .chat-resizer {
+            width: 5px;
+            background-color: #21262d;
+            cursor: col-resize;
+        }
+
+        /* Editor placeholder when no file is open */
+        .editor-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #7d8590;
+            font-size: 16px;
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* Toggle switch for auto-confirm */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-label {
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            background-color: #21262d;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .toggle-switch.active {
+            background-color: #238636;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background-color: #e6edf3;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(20px);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Bash Agent - Code Editor</div>
+        <div class="controls">
+            <div class="toggle-container">
+                <span class="toggle-label">Auto-confirm</span>
+                <div class="toggle-switch" id="auto-confirm-toggle">
+                    <div class="toggle-slider"></div>
+                </div>
+            </div>
+            <div class="status">
+                <span class="status-dot"></span>
+                <span id="status-text">Connecting...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="split-container">
+        <!-- File Browser -->
+        <div class="file-browser">
+            <div class="file-browser-header">Files</div>
+            <ul class="directory-tree" id="dir-tree">
+                <!-- Directory tree will be loaded here -->
+            </ul>
+        </div>
+
+        <!-- Editor Pane -->
+        <div class="editor-pane">
+            <div class="editor-tabs" id="editor-tabs">
+                <!-- Tabs will be added here -->
+            </div>
+            <div class="editor-container">
+                <div id="monaco-editor">
+                    <div class="editor-placeholder">
+                        <div>
+                            <h3>Welcome to the Monaco Editor</h3>
+                            <p>Select a file from the file browser to start editing</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="editor-statusbar">
+                <div class="editor-position">
+                    Line: <span id="line-position">1</span>, 
+                    Column: <span id="column-position">1</span>
+                </div>
+                <div class="editor-language">
+                    <span id="editor-language">plaintext</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resizer for Chat Pane -->
+        <div class="chat-resizer" id="chat-resizer"></div>
+
+        <!-- Chat Pane -->
+        <div class="chat-pane">
+            <div class="messages" id="messages">
+                <!-- Messages will be added here -->
+            </div>
+            
+            <div class="typing-indicator" id="typing-indicator">
+                Agent is typing...
+            </div>
+            
+            <div class="input-container">
+                <textarea 
+                    class="input-field" 
+                    id="message-input" 
+                    placeholder="Type your message here..."
+                    rows="1"
+                ></textarea>
+                <button class="send-button" id="send-button">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration for Monaco editor
+        var monacoConfig = {
+            editorTheme: 'vs-dark',
+            basePath: '/static/vendor/monaco-editor/min'
+        };
+
+        // Variable to store the current open editor
+        var currentEditor = null;
+        var openFiles = {};
+        var currentFilePath = null;
+        
+        // Socket.io connection
+        const socket = io();
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const statusText = document.getElementById('status-text');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const autoConfirmToggle = document.getElementById('auto-confirm-toggle');
+        const chatResizer = document.getElementById('chat-resizer');
+        const chatPane = document.querySelector('.chat-pane');
+        
+        let isConnected = false;
+        let isTyping = false;
+        let autoConfirmEnabled = false;
+        let currentToolExecution = null;
+
+        // Auto-resize textarea
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        });
+
+        // Send message on Enter (but allow Shift+Enter for new lines)
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', sendMessage);
+
+        // Chat pane resize functionality
+        let startX, startWidth;
+        chatResizer.addEventListener('mousedown', function(e) {
+            startX = e.clientX;
+            startWidth = chatPane.offsetWidth;
+            document.addEventListener('mousemove', resizeChat);
+            document.addEventListener('mouseup', stopResizeChat);
+        });
+
+        function resizeChat(e) {
+            const width = startWidth - (e.clientX - startX);
+            const minWidth = 300; // Minimum width
+            const maxWidth = window.innerWidth * 0.7; // Maximum width
+            
+            if (width >= minWidth && width <= maxWidth) {
+                chatPane.style.width = width + 'px';
+            }
+        }
+
+        function stopResizeChat() {
+            document.removeEventListener('mousemove', resizeChat);
+            document.removeEventListener('mouseup', stopResizeChat);
+            
+            // Resize the Monaco editor
+            if (currentEditor) {
+                currentEditor.layout();
+            }
+        }
+
+        // Auto-confirm toggle
+        autoConfirmToggle.addEventListener('click', function() {
+            autoConfirmEnabled = !autoConfirmEnabled;
+            updateToggleDisplay();
+            socket.emit('update_auto_confirm', { enabled: autoConfirmEnabled });
+        });
+
+        function updateToggleDisplay() {
+            if (autoConfirmEnabled) {
+                autoConfirmToggle.classList.add('active');
+            } else {
+                autoConfirmToggle.classList.remove('active');
+            }
+        }
+
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && isConnected) {
+                socket.emit('user_message', { message: message });
+                messageInput.value = '';
+                messageInput.style.height = 'auto';
+                showTyping();
+            }
+        }
+
+        function addMessage(type, content, timestamp) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            
+            const time = new Date(timestamp).toLocaleTimeString();
+            const typeLabel = type === 'user' ? 'You' : 
+                            type === 'agent' ? 'Agent' : 
+                            type === 'system' ? 'System' : 'Error';
+            
+            // Render agent messages as markdown, others as escaped HTML
+            let contentHtml;
+            if (type === 'agent') {
+                contentHtml = marked.parse(content);
+            } else {
+                contentHtml = escapeHtml(content);
+            }
+            
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    ${typeLabel}
+                    <span class="message-timestamp">${time}</span>
+                </div>
+                <div class="message-content">${contentHtml}</div>
+            `;
+            
+            // Apply syntax highlighting to code blocks in markdown
+            if (type === 'agent') {
+                messageEl.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+            
+            messages.appendChild(messageEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function addToolConfirmation(data) {
+            const confirmationEl = document.createElement('div');
+            confirmationEl.className = 'tool-confirmation';
+            confirmationEl.innerHTML = `
+                <div class="tool-confirmation-header">Tool Execution Required</div>
+                <div class="tool-confirmation-content">
+                    <strong>Tool:</strong> ${data.tool_name}<br>
+                    <strong>Input:</strong> ${JSON.stringify(data.tool_input, null, 2)}
+                </div>
+                <div class="tool-confirmation-buttons">
+                    <button class="confirm-button" onclick="confirmTool('${data.tool_call_id}', true, ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                        Execute
+                    </button>
+                    <button class="cancel-button" onclick="showRejectionInput('${data.tool_call_id}', ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                        Cancel
+                    </button>
+                </div>
+                <div class="rejection-input" id="rejection-input-${data.tool_call_id}" style="display: none;">
+                    <div style="margin-top: 10px;">
+                        <label>Reason for rejection (optional):</label>
+                        <input type="text" id="rejection-reason-${data.tool_call_id}" placeholder="e.g., Command is too risky, need more context..." style="width: 100%; margin-top: 5px; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <button class="cancel-button" onclick="submitRejection('${data.tool_call_id}', ${JSON.stringify(data.tool_call).replace(/"/g, '&quot;')})">
+                            Submit Rejection
+                        </button>
+                        <button class="confirm-button" onclick="hideRejectionInput('${data.tool_call_id}')">
+                            Back
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            messages.appendChild(confirmationEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+        }
+
+        function confirmTool(toolCallId, confirmed, toolCall = null) {
+            socket.emit('tool_confirm', {
+                tool_call_id: toolCallId,
+                confirmed: confirmed,
+                tool_call: toolCall
+            });
+            
+            // Remove the confirmation dialog
+            const confirmations = document.querySelectorAll('.tool-confirmation');
+            confirmations.forEach(el => el.remove());
+            
+            if (confirmed) {
+                showTyping();
+            }
+        }
+
+        function showRejectionInput(toolCallId, toolCall) {
+            const rejectionInput = document.getElementById(`rejection-input-${toolCallId}`);
+            const buttons = document.querySelector('.tool-confirmation-buttons');
+            
+            if (rejectionInput && buttons) {
+                rejectionInput.style.display = 'block';
+                buttons.style.display = 'none';
+                
+                // Focus on the input field
+                const reasonInput = document.getElementById(`rejection-reason-${toolCallId}`);
+                if (reasonInput) {
+                    reasonInput.focus();
+                }
+            }
+        }
+
+        function hideRejectionInput(toolCallId) {
+            const rejectionInput = document.getElementById(`rejection-input-${toolCallId}`);
+            const buttons = document.querySelector('.tool-confirmation-buttons');
+            
+            if (rejectionInput && buttons) {
+                rejectionInput.style.display = 'none';
+                buttons.style.display = 'block';
+            }
+        }
+
+        function submitRejection(toolCallId, toolCall) {
+            const reasonInput = document.getElementById(`rejection-reason-${toolCallId}`);
+            const rejectionReason = reasonInput ? reasonInput.value.trim() : '';
+            
+            socket.emit('tool_confirm', {
+                tool_call_id: toolCallId,
+                confirmed: false,
+                tool_call: toolCall,
+                rejection_reason: rejectionReason
+            });
+            
+            // Remove the confirmation dialog
+            const confirmations = document.querySelectorAll('.tool-confirmation');
+            confirmations.forEach(el => el.remove());
+            
+            showTyping();
+        }
+
+        function showTyping() {
+            if (!isTyping) {
+                isTyping = true;
+                typingIndicator.classList.add('show');
+            }
+        }
+
+        function hideTyping() {
+            if (isTyping) {
+                isTyping = false;
+                typingIndicator.classList.remove('show');
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Socket event handlers
+        socket.on('connect', function() {
+            isConnected = true;
+            statusText.textContent = 'Connected';
+            sendButton.disabled = false;
+            
+            // Load the directory tree when connected
+            loadDirectoryTree();
+        });
+
+        socket.on('session_started', function(data) {
+            // Request current auto-confirm state
+            socket.emit('get_auto_confirm_state');
+        });
+
+        socket.on('auto_confirm_state', function(data) {
+            autoConfirmEnabled = data.enabled;
+            updateToggleDisplay();
+        });
+
+        socket.on('disconnect', function() {
+            isConnected = false;
+            statusText.textContent = 'Disconnected';
+            sendButton.disabled = true;
+            hideTyping();
+        });
+
+        socket.on('message', function(data) {
+            addMessage(data.type, data.content, data.timestamp);
+        });
+
+        socket.on('tool_confirmation', function(data) {
+            addToolConfirmation(data);
+        });
+
+        socket.on('error', function(data) {
+            addMessage('error', data.message, new Date().toISOString());
+        });
+
+        // Load directory tree function
+        function loadDirectoryTree() {
+            // Call a server API to get the directory structure
+            fetch('/api/directory-tree')
+                .then(response => response.json())
+                .then(data => {
+                    renderDirectoryTree(data);
+                })
+                .catch(error => {
+                    console.error('Error loading directory tree:', error);
+                });
+        }
+
+        // Render directory tree function
+        function renderDirectoryTree(data, parentElement = document.getElementById('dir-tree')) {
+            parentElement.innerHTML = ''; // Clear existing content
+            
+            data.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = item.name;
+                
+                if (item.type === 'directory') {
+                    li.classList.add('folder');
+                    const subUl = document.createElement('ul');
+                    subUl.style.display = 'none'; // Initially collapsed
+                    subUl.classList.add('directory-tree');
+                    
+                    li.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        subUl.style.display = subUl.style.display === 'none' ? 'block' : 'none';
+                    });
+                    
+                    if (item.children && item.children.length > 0) {
+                        renderDirectoryTree(item.children, subUl);
+                    }
+                    
+                    li.appendChild(subUl);
+                } else {
+                    li.classList.add('file');
+                    li.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        openFile(item.path);
+                    });
+                }
+                
+                parentElement.appendChild(li);
+            });
+        }
+
+        // Open file function
+        function openFile(filePath) {
+            // Check if the file is already open
+            if (openFiles[filePath]) {
+                // Switch to the tab
+                selectTab(filePath);
+                return;
+            }
+            
+            // Fetch the file content
+            fetch(`/api/file-content?path=${encodeURIComponent(filePath)}`)
+                .then(response => response.text())
+                .then(content => {
+                    // Create a new tab
+                    createTab(filePath);
+                    
+                    // Create or update the editor model
+                    const filename = filePath.split('/').pop();
+                    const language = getLanguageFromFilename(filename);
+                    
+                    if (!currentEditor) {
+                        // Initialize Monaco editor if it doesn't exist
+                        initializeMonacoEditor(content, language, filePath);
+                    } else {
+                        // Update the model of the existing editor
+                        updateMonacoEditor(content, language, filePath);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error opening file:', error);
+                });
+        }
+
+        // Create a new tab for the file
+        function createTab(filePath) {
+            const tabsContainer = document.getElementById('editor-tabs');
+            const filename = filePath.split('/').pop();
+            
+            // Create a new tab element
+            const tab = document.createElement('div');
+            tab.className = 'editor-tab';
+            tab.dataset.path = filePath;
+            tab.innerHTML = `
+                <span>${filename}</span>
+                <span class="editor-tab-close">×</span>
+            `;
+            
+            // Add click event to select the tab
+            tab.addEventListener('click', function() {
+                selectTab(filePath);
+            });
+            
+            // Add click event to close the tab
+            tab.querySelector('.editor-tab-close').addEventListener('click', function(e) {
+                e.stopPropagation();
+                closeTab(filePath);
+            });
+            
+            // Add the tab to the container
+            tabsContainer.appendChild(tab);
+            
+            // Mark the tab as active
+            selectTab(filePath);
+            
+            // Add to open files tracking
+            openFiles[filePath] = true;
+        }
+
+        // Select a tab
+        function selectTab(filePath) {
+            // Remove active class from all tabs
+            document.querySelectorAll('.editor-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Add active class to the selected tab
+            const tab = document.querySelector(`.editor-tab[data-path="${filePath}"]`);
+            if (tab) {
+                tab.classList.add('active');
+            }
+            
+            // Switch to the corresponding file in the editor
+            switchEditorContent(filePath);
+        }
+
+        // Close a tab
+        function closeTab(filePath) {
+            // Remove the tab element
+            const tab = document.querySelector(`.editor-tab[data-path="${filePath}"]`);
+            if (tab) {
+                tab.remove();
+            }
+            
+            // Remove from open files tracking
+            delete openFiles[filePath];
+            
+            // If this was the current file, switch to another tab or clear the editor
+            if (currentFilePath === filePath) {
+                const tabs = document.querySelectorAll('.editor-tab');
+                if (tabs.length > 0) {
+                    // Switch to the first remaining tab
+                    selectTab(tabs[0].dataset.path);
+                } else {
+                    // No tabs left, clear the editor
+                    clearEditor();
+                }
+            }
+        }
+
+        // Switch the editor content
+        function switchEditorContent(filePath) {
+            currentFilePath = filePath;
+            
+            // Fetch the file content again to ensure it's up to date
+            fetch(`/api/file-content?path=${encodeURIComponent(filePath)}`)
+                .then(response => response.text())
+                .then(content => {
+                    // Get the language based on the file extension
+                    const filename = filePath.split('/').pop();
+                    const language = getLanguageFromFilename(filename);
+                    
+                    // Update the editor with the file content
+                    updateMonacoEditor(content, language, filePath);
+                })
+                .catch(error => {
+                    console.error('Error switching editor content:', error);
+                });
+        }
+
+        // Clear the editor when no files are open
+        function clearEditor() {
+            currentFilePath = null;
+            
+            // Replace the editor with a placeholder
+            document.getElementById('monaco-editor').innerHTML = `
+                <div class="editor-placeholder">
+                    <div>
+                        <h3>Welcome to the Monaco Editor</h3>
+                        <p>Select a file from the file browser to start editing</p>
+                    </div>
+                </div>
+            `;
+            
+            // Reset the editor instance
+            currentEditor = null;
+            
+            // Update the status bar
+            document.getElementById('line-position').textContent = '1';
+            document.getElementById('column-position').textContent = '1';
+            document.getElementById('editor-language').textContent = 'plaintext';
+        }
+
+        // Get the language from the filename
+        function getLanguageFromFilename(filename) {
+            const extension = filename.split('.').pop().toLowerCase();
+            
+            // Map extensions to Monaco editor language IDs
+            const languageMap = {
+                'js': 'javascript',
+                'ts': 'typescript',
+                'html': 'html',
+                'css': 'css',
+                'json': 'json',
+                'py': 'python',
+                'md': 'markdown',
+                'txt': 'plaintext',
+                'sh': 'shell',
+                'bash': 'shell',
+                'sql': 'sql',
+                'yml': 'yaml',
+                'yaml': 'yaml',
+                'xml': 'xml',
+                'java': 'java',
+                'c': 'c',
+                'cpp': 'cpp',
+                'h': 'cpp',
+                'cs': 'csharp',
+                'go': 'go',
+                'rs': 'rust',
+                'php': 'php'
+            };
+            
+            return languageMap[extension] || 'plaintext';
+        }
+
+        // Save the current file
+        function saveCurrentFile() {
+            if (!currentFilePath || !currentEditor) return;
+            
+            const content = currentEditor.getValue();
+            
+            // Send the content to the server to save
+            fetch('/api/save-file', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    path: currentFilePath,
+                    content: content
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Notify user of successful save
+                    addMessage('system', `File saved: ${currentFilePath}`, new Date().toISOString());
+                } else {
+                    // Notify user of save error
+                    addMessage('error', `Error saving file: ${data.message}`, new Date().toISOString());
+                }
+            })
+            .catch(error => {
+                addMessage('error', `Error saving file: ${error.message}`, new Date().toISOString());
+            });
+        }
+
+        // Initialize Monaco Editor
+        function initializeMonacoEditor(content, language, filePath) {
+            // Clear the placeholder
+            document.getElementById('monaco-editor').innerHTML = '';
+            
+            // Configure require.js for Monaco
+            require.config({ 
+                paths: { 'vs': '/static/vendor/monaco-editor/min/vs' }
+            });
+            
+            // Load Monaco
+            require(['vs/editor/editor.main'], function() {
+                // Create the editor
+                currentEditor = monaco.editor.create(document.getElementById('monaco-editor'), {
+                    value: content,
+                    language: language,
+                    theme: monacoConfig.editorTheme,
+                    automaticLayout: true,
+                    minimap: { enabled: true },
+                    scrollBeyondLastLine: false,
+                    renderLineHighlight: 'all',
+                    rulers: [],
+                    fontSize: 14,
+                    fontFamily: "'SF Mono', Monaco, Menlo, Consolas, 'Ubuntu Mono', monospace"
+                });
+                
+                // Set the current file path
+                currentFilePath = filePath;
+                
+                // Update status bar on cursor position change
+                currentEditor.onDidChangeCursorPosition(function(e) {
+                    document.getElementById('line-position').textContent = e.position.lineNumber;
+                    document.getElementById('column-position').textContent = e.position.column;
+                });
+                
+                // Set language in status bar
+                document.getElementById('editor-language').textContent = language;
+                
+                // Add key binding for save (Ctrl+S)
+                currentEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+                    saveCurrentFile();
+                });
+                
+                // Focus the editor
+                currentEditor.focus();
+            });
+        }
+
+        // Update Monaco Editor with new content
+        function updateMonacoEditor(content, language, filePath) {
+            if (!currentEditor) {
+                initializeMonacoEditor(content, language, filePath);
+                return;
+            }
+            
+            // Get the current model
+            const model = currentEditor.getModel();
+            
+            // If the language has changed, create a new model
+            if (model && monaco.editor.getModels().indexOf(model) >= 0 && 
+                model.getLanguageId() !== language) {
+                
+                // Dispose the old model
+                model.dispose();
+                
+                // Create a new model with the new language
+                const newModel = monaco.editor.createModel(content, language);
+                currentEditor.setModel(newModel);
+            } else {
+                // Update the content of the existing model
+                currentEditor.setValue(content);
+            }
+            
+            // Set the current file path
+            currentFilePath = filePath;
+            
+            // Update language in status bar
+            document.getElementById('editor-language').textContent = language;
+            
+            // Focus the editor
+            currentEditor.focus();
+        }
+
+        // Initialize the editor when the page is loaded
+        window.addEventListener('load', function() {
+            // Initialize chat functionality
+            messageInput.focus();
+        });
+    </script>
+</body>
+</html>
