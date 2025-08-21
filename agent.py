@@ -8,6 +8,7 @@ from datetime import datetime
 import time
 import tempfile
 import psutil
+import base64
 
 import anthropic
 from anthropic import RateLimitError, APIError
@@ -24,6 +25,9 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from memory import MemoryManager
 from todos import TodoManager
 from github_rag import GitHubRAG
+
+# Store uploaded files temporarily by file ID
+uploaded_files = {}
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -147,37 +151,142 @@ def get_conversation_history():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """API endpoint to handle file uploads"""
-    if 'file' not in request.files:
+    """API endpoint to handle file uploads and return content"""
+    print("=== UPLOAD ENDPOINT CALLED ===")
+    print(f"Request files: {list(request.files.keys())}")
+    
+    if 'files' not in request.files and 'file' not in request.files:
+        print("ERROR: No files found in request")
         return jsonify({'success': False, 'error': 'No file provided'}), 400
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    # Handle both single and multiple file uploads
+    files = request.files.getlist('files') if 'files' in request.files else [request.files['file']]
+    print(f"Processing {len(files)} files")
+    results = []
+    
+    for i, file in enumerate(files):
+        print(f"Processing file {i+1}: {file.filename}")
+        if file.filename == '':
+            print("  Skipping empty filename")
+            continue
+            
+        try:
+            # Create temp file to store upload
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f"_{file.filename}") as temp_file:
+                file.save(temp_file.name)
+                temp_path = temp_file.name
+            
+            # Check if it's an image
+            file_ext = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
+            is_image = file_ext in ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp']
+            print(f"  File extension: {file_ext}, is_image: {is_image}")
+            
+            # Read file content
+            try:
+                # Try to read as text first
+                with open(temp_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    file_type = 'text'
+                    # For small text files, include content directly
+                    if len(content) < 10000:  # 10KB limit for direct content
+                        os.unlink(temp_path)
+                        print(f"  Read small text content: {len(content)} chars")
+                        results.append({
+                            'name': file.filename,
+                            'content': content,
+                            'type': file_type,
+                            'size': len(content)
+                        })
+                        continue
+            except UnicodeDecodeError:
+                # Binary file
+                if is_image:
+                    file_type = 'image'
+                else:
+                    file_type = 'binary'
+            
+            # For large files or binary files, store them temporarily and return a file ID
+            file_id = str(uuid.uuid4())
+            
+            # Store file info
+            uploaded_files[file_id] = {
+                'path': temp_path,
+                'filename': file.filename,
+                'type': file_type,
+                'uploaded_at': datetime.now()
+            }
+            
+            # Get file size
+            file_size = os.path.getsize(temp_path)
+            print(f"  Stored large/binary file with ID: {file_id}, size: {file_size} bytes")
+            
+            results.append({
+                'name': file.filename,
+                'file_id': file_id,
+                'type': file_type,
+                'size': file_size
+            })
+                
+        except Exception as e:
+            print(f"  Error processing file: {e}")
+            results.append({
+                'name': file.filename,
+                'error': str(e)
+            })
+    
+    if not results:
+        return jsonify({'success': False, 'error': 'No valid files uploaded'}), 400
+        
+    return jsonify({
+        'success': True,
+        'files': results
+    })
+
+
+def get_file_content_by_id(file_id: str) -> dict:
+    """Get file content by file ID."""
+    if file_id not in uploaded_files:
+        return {'error': 'File not found'}
+    
+    file_info = uploaded_files[file_id]
     
     try:
-        # Save the file to the current working directory
-        filename = file.filename
-        file_path = os.path.join(os.getcwd(), filename)
+        if file_info['type'] == 'text':
+            with open(file_info['path'], 'r', encoding='utf-8') as f:
+                content = f.read()
+        else:
+            # For binary/image files, read as base64
+            with open(file_info['path'], 'rb') as f:
+                content = base64.b64encode(f.read()).decode('utf-8')
         
-        # Check if file already exists and create a unique name if needed
-        counter = 1
-        base_name, ext = os.path.splitext(filename)
-        while os.path.exists(file_path):
-            filename = f"{base_name}_{counter}{ext}"
-            file_path = os.path.join(os.getcwd(), filename)
-            counter += 1
-        
-        file.save(file_path)
-        
-        return jsonify({
-            'success': True,
-            'filename': filename,
-            'path': file_path
-        })
-        
+        return {
+            'name': file_info['filename'],
+            'content': content,
+            'type': file_info['type'],
+            'size': len(content)
+        }
+    
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return {'error': str(e)}
+
+
+def cleanup_old_files():
+    """Clean up files older than 1 hour."""
+    current_time = datetime.now()
+    files_to_remove = []
+    
+    for file_id, file_info in uploaded_files.items():
+        if (current_time - file_info['uploaded_at']).seconds > 3600:  # 1 hour
+            files_to_remove.append(file_id)
+    
+    for file_id in files_to_remove:
+        file_info = uploaded_files[file_id]
+        try:
+            if os.path.exists(file_info['path']):
+                os.unlink(file_info['path'])
+        except Exception:
+            pass
+        del uploaded_files[file_id]
 
 @socketio.on('connect')
 def handle_connect(auth=None):
@@ -218,44 +327,149 @@ def handle_disconnect():
 
 @socketio.on('user_message')
 def handle_user_message(data):
+    print(f"=== USER_MESSAGE EVENT RECEIVED ===")
+    print(f"Raw data received: {data}")
+    
     session_id = session.get('session_id')
+    print(f"Session ID: {session_id}")
+    
     if session_id not in sessions:
+        print(f"ERROR: Session {session_id} not found in sessions")
         emit('error', {'message': 'Session not found'})
         return
     
     user_input = data.get('message', '').strip()
+    print(f"User input: '{user_input}'")
+    
     if not user_input:
+        print("ERROR: No user input provided")
         return
     
-    # Echo user message
-    user_message = {
+    # Clean up old uploaded files periodically
+    cleanup_old_files()
+    
+    # Get attached files and resolve content for LLM processing
+    attached_files = data.get('files', [])
+    print(f"Attached files received: {len(attached_files)} files")
+    
+    # Process files - resolve file_id references to actual content
+    resolved_files = []
+    for i, file_info in enumerate(attached_files):
+        print(f"  File {i+1}: {file_info.get('name', 'unknown')} - type: {file_info.get('type', 'unknown')}")
+        
+        if 'content' in file_info:
+            # Small file with direct content
+            resolved_files.append(file_info)
+            print(f"    Direct content: {len(str(file_info.get('content', '')))} chars")
+        elif 'file_id' in file_info:
+            # Large file stored with file_id - retrieve content
+            file_data = get_file_content_by_id(file_info['file_id'])
+            if 'error' in file_data:
+                print(f"    Error loading file: {file_data['error']}")
+                # Add error info
+                resolved_files.append({
+                    'name': file_info['name'],
+                    'content': f"[Error loading file: {file_data['error']}]",
+                    'type': 'error'
+                })
+            else:
+                print(f"    Retrieved content: {len(str(file_data.get('content', '')))} chars")
+                resolved_files.append({
+                    'name': file_data['name'],
+                    'content': file_data['content'],
+                    'type': file_data['type']
+                })
+    
+    # Process files and generate summaries once
+    llm_message = user_input
+    display_message = user_input
+    history_message = user_input
+    
+    print("Building messages...")
+    if resolved_files:
+        print(f"Processing {len(resolved_files)} resolved files")
+        # Check session still exists before accessing LLM for file processing
+        if session_id not in sessions:
+            print(f"ERROR: Session {session_id} was removed before file processing")
+            emit('error', {'message': 'Session expired during file processing'})
+            return
+        llm = sessions[session_id]['llm']
+        
+        for file_info in resolved_files:
+            if file_info.get('type') == 'image':
+                print(f"  Summarizing image: {file_info['name']}")
+                # Generate image summary once
+                image_summary = llm.summarize_image(file_info['content'], file_info['name'])
+                
+                # Add to LLM message (for processing)
+                llm_message += f"\n\n[Image Description for {file_info['name']}]:\n{image_summary}"
+                
+                # Add to display message (clean reference)
+                display_message += f"\n\n[Image: {file_info['name']}]"
+                
+                # Add to history message (with description)
+                history_message += f"\n\n[Image: {file_info['name']}]\nDescription: {image_summary}"
+            else:
+                print(f"  Adding file: {file_info['name']}")
+                file_content = f"\n\n--- File: {file_info['name']} ---\n{file_info['content']}\n--- End of {file_info['name']} ---"
+                
+                # Add to all messages (same content for text files)
+                llm_message += file_content
+                display_message += file_content
+                history_message += file_content
+    
+    # Echo user message (clean version for display)
+    user_message_display = {
         'type': 'user',
-        'content': user_input,
+        'content': display_message,
         'timestamp': datetime.now().isoformat()
     }
-    emit('message', user_message)
+    print(f"Emitting user message: {user_message_display}")
+    emit('message', user_message_display)
     
-    # Store in conversation history
-    sessions[session_id]['conversation_history'].append(user_message)
+    # Store in conversation history (with descriptions)
+    user_message_history = {
+        'type': 'user',
+        'content': history_message,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # Double-check session still exists before accessing
+    if session_id not in sessions:
+        print(f"ERROR: Session {session_id} was removed before storing conversation history")
+        emit('error', {'message': 'Session expired'})
+        return
+        
+    sessions[session_id]['conversation_history'].append(user_message_history)
+    print(f"Added message to conversation history")
     
     # Process with LLM
+    print(f"Starting LLM processing...")
     try:
-        llm = sessions[session_id]['llm']
-        auto_confirm = sessions[session_id]['auto_confirm']
-        memory_manager = sessions[session_id]['memory_manager']
+        # Double-check session still exists before accessing LLM components
+        if session_id not in sessions:
+            print(f"ERROR: Session {session_id} was removed before LLM processing")
+            emit('error', {'message': 'Session expired during processing'})
+            return
+            
+        session_data = sessions[session_id]  # Get session data once to avoid multiple lookups
+        llm = session_data['llm']
+        auto_confirm = session_data['auto_confirm']
+        memory_manager = session_data['memory_manager']
+        print(f"Retrieved session components: llm={llm is not None}, auto_confirm={auto_confirm}")
         
         # Load relevant memories as context
         relevant_memories = memory_manager.get_memory_context(user_input, max_memories=3)
         
         # Load active todos as context
-        todo_manager = sessions[session_id]['todo_manager']
+        todo_manager = session_data['todo_manager']
         active_todos_summary = todo_manager.get_active_todos_summary()
         
         # Load GitHub RAG repositories context
         github_rag_context = ""
         try:
-            if 'github_rag' in sessions[session_id]:
-                github_rag = sessions[session_id]['github_rag']
+            if 'github_rag' in session_data:
+                github_rag = session_data['github_rag']
                 github_rag_context = github_rag.get_repository_memory_context()
         except Exception:
             pass
@@ -273,23 +487,40 @@ def handle_user_message(data):
             context_parts.append(github_rag_context)
         
         if context_parts:
-            context_msg = "\n\n".join(context_parts) + f"\n\n=== USER MESSAGE ===\n{user_input}"
+            context_msg = "\n\n".join(context_parts) + f"\n\n=== USER MESSAGE ===\n{llm_message}"
             msg = [{"type": "text", "text": context_msg}]
         else:
-            msg = [{"type": "text", "text": user_input}]
-            
-        output, tool_calls = llm(msg)
+            msg = [{"type": "text", "text": llm_message}]
         
-        # Send agent response
+        print(f"Final message to LLM: {msg[0]['text'][:200]}..." if len(msg[0]['text']) > 200 else f"Final message to LLM: {msg[0]['text']}")
+        print("Calling LLM with streaming...")
+        
+        # Define streaming callback
+        def stream_callback(chunk, stream_type):
+            emit('message_chunk', {
+                'type': 'agent',
+                'chunk': chunk,
+                'stream_type': stream_type,
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        # Call LLM with streaming
+        output, tool_calls = llm(msg, stream_callback=stream_callback)
+        print(f"LLM response received: {len(output)} chars, {len(tool_calls) if tool_calls else 0} tool calls")
+        
+        # Send final agent response (for history)
         agent_message = {
             'type': 'agent',
             'content': output,
             'timestamp': datetime.now().isoformat()
         }
-        emit('message', agent_message)
+        emit('message_complete', agent_message)
         
-        # Store in conversation history
-        sessions[session_id]['conversation_history'].append(agent_message)
+        # Store in conversation history - check session still exists
+        if session_id in sessions:
+            sessions[session_id]['conversation_history'].append(agent_message)
+        else:
+            print(f"ERROR: Session {session_id} was removed before storing agent response")
         
         # Handle tool calls
         if tool_calls:
@@ -2315,7 +2546,9 @@ class LLM:
     def __init__(self, model, session_id=None):
         if "ANTHROPIC_API_KEY" not in os.environ:
             raise ValueError("ANTHROPIC_API_KEY environment variable not found.")
-        self.client = anthropic.Anthropic()
+        self.client = anthropic.Anthropic(
+            
+        )
         self.model = model
         self.session_id = session_id
         self.messages = []
@@ -2448,25 +2681,298 @@ class LLM:
         stop=stop_after_attempt(5),
         reraise=True
     )
-    def _call_anthropic(self):
+    def _call_anthropic(self, stream=False):
         return self.client.messages.create(
             model=self.model,
-            max_tokens=20_000,
+            max_tokens=64_000,
             system=self.system_prompt,
             messages=self.messages,
-            tools=self.tools
+            tools=self.tools,
+            stream=stream,
+            timeout=600.0  # 10 minutes timeout for long operations
         )
 
-    def __call__(self, content):
-        self.messages.append({"role": "user", "content": content})
-        self.messages[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+    def summarize_image(self, image_data, filename):
+        """Summarize an image using a separate LLM call to save tokens."""
+        print(f"Summarizing image: {filename}")
+        
+        # Create a simple client for image summarization
+        temp_messages = [{
+            "role": "user", 
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Please provide a detailed description of this image ({filename}). Focus on the key visual elements, text content, UI elements, code, diagrams, or any other important details that would be useful for an AI assistant helping with programming tasks."
+                },
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": image_data
+                    }
+                }
+            ]
+        }]
+        
         try:
-            response = self._call_anthropic()
+            response = self.client.messages.create(
+                model="claude-opus-4-1-20250805",  # Use latest Claude for best image understanding
+                max_tokens=1000,
+                system="You are an expert at describing images in detail. Provide comprehensive descriptions that would help an AI assistant understand the content.",
+                messages=temp_messages
+            )
+            summary = response.content[0].text
+            print(f"Image summary generated: {len(summary)} chars")
+            return summary
+        except Exception as e:
+            print(f"Error summarizing image: {e}")
+            return f"[Image: {filename} - Could not generate summary: {str(e)}]"
+
+    def _call_with_streaming(self, stream_callback):
+        """Handle streaming responses."""
+        print("Starting streaming response...")
+        
+        response_text = ""
+        tool_calls = []
+        input_tokens = 0
+        output_tokens = 0
+        
+        try:
+            with self._call_anthropic(stream=True) as stream:
+                for event in stream:
+                    if event.type == "message_start":
+                        input_tokens = event.message.usage.input_tokens
+                        
+                    elif event.type == "content_block_start":
+                        if event.content_block.type == "text":
+                            pass  # Text block starting
+                        elif event.content_block.type == "tool_use":
+                            tool_calls.append({
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input": event.content_block.input
+                            })
+                    
+                    elif event.type == "content_block_delta":
+                        if event.delta.type == "text_delta":
+                            chunk = event.delta.text
+                            response_text += chunk
+                            # Stream to callback
+                            if stream_callback:
+                                stream_callback(chunk, "content")
+                        elif event.delta.type == "input_json_delta":
+                            # Tool input is being streamed
+                            pass
+                    
+                    elif event.type == "message_delta":
+                        if hasattr(event.delta, 'stop_reason'):
+                            print(f"Stream finished: {event.delta.stop_reason}")
+                    
+                    elif event.type == "message_stop":
+                        # Handle different API versions - some have usage directly on event
+                        if hasattr(event, 'usage') and event.usage:
+                            output_tokens = event.usage.output_tokens
+                        elif hasattr(event, 'message') and hasattr(event.message, 'usage'):
+                            output_tokens = event.message.usage.output_tokens
+                        
+        except Exception as e:
+            print(f"Streaming error: {e}")
+            raise
+        
+        # Update token usage
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_tokens = self.total_input_tokens + self.total_output_tokens
+        
+        # Emit token usage update
+        if stream_callback:
+            try:
+                from flask import session as flask_session
+                session_id = flask_session.get('session_id')
+                if session_id:
+                    emit('token_usage_update', {
+                        'input_tokens': input_tokens,
+                        'output_tokens': output_tokens,
+                        'total_input_tokens': self.total_input_tokens,
+                        'total_output_tokens': self.total_output_tokens,
+                        'total_tokens': self.total_tokens,
+                        'timestamp': datetime.now().isoformat()
+                    }, room=session_id)
+            except:
+                pass
+        
+        # Return response text and tool calls
+        return response_text, tool_calls
+
+    def _remove_cache_control(self):
+        """Safely remove cache_control from the user message."""
+        if not self.messages:
+            return
+            
+        # Find the most recent user message
+        for i in range(len(self.messages) - 1, -1, -1):
+            if self.messages[i].get("role") == "user":
+                user_message = self.messages[i]
+                if isinstance(user_message.get("content"), list) and len(user_message["content"]) > 0:
+                    last_content = user_message["content"][-1]
+                    if isinstance(last_content, dict) and "cache_control" in last_content:
+                        del last_content["cache_control"]
+                        print(f"DEBUG: Removed cache_control from user message")
+                break
+    
+    def _validate_message_structure(self):
+        """Validate message structure to prevent orphaned tool_result blocks."""
+        if not self.messages:
+            return
+            
+        print(f"DEBUG: Validating message structure with {len(self.messages)} messages")
+        
+        # Print all messages for debugging
+        for i, msg in enumerate(self.messages):
+            print(f"DEBUG: Message {i}: role={msg.get('role')}, content_type={type(msg.get('content'))}")
+            if isinstance(msg.get('content'), list):
+                for j, content in enumerate(msg['content']):
+                    content_type = content.get('type') if isinstance(content, dict) else getattr(content, 'type', 'unknown')
+                    if content_type == 'tool_use':
+                        tool_id = content.get('id') if isinstance(content, dict) else getattr(content, 'id', 'unknown')
+                        print(f"DEBUG:   Content {j}: {content_type} with ID: {tool_id}")
+                    elif content_type == 'tool_result':
+                        tool_use_id = content.get('tool_use_id') if isinstance(content, dict) else getattr(content, 'tool_use_id', 'unknown')
+                        print(f"DEBUG:   Content {j}: {content_type} with tool_use_id: {tool_use_id}")
+                    else:
+                        print(f"DEBUG:   Content {j}: {content_type}")
+        
+        # Check for orphaned tool_result blocks
+        for i, message in enumerate(self.messages):
+            if message.get("role") == "user" and isinstance(message.get("content"), list):
+                tool_results = [c for c in message["content"] if c.get("type") == "tool_result"]
+                if tool_results:
+                    print(f"DEBUG: Found {len(tool_results)} tool_result blocks in message {i}")
+                    
+                    # Look for corresponding tool_use blocks in previous assistant messages
+                    tool_use_ids = set()
+                    
+                    # Search backwards for the most recent assistant message with tool_use blocks
+                    for j in range(i-1, -1, -1):
+                        prev_message = self.messages[j]
+                        print(f"DEBUG: Checking message {j}: role={prev_message.get('role')}")
+                        
+                        if prev_message.get("role") == "assistant":
+                            prev_content = prev_message.get("content", [])
+                            print(f"DEBUG: Assistant message content type: {type(prev_content)}")
+                            if isinstance(prev_content, list):
+                                for c in prev_content:
+                                    if hasattr(c, 'type') and c.type == "tool_use":
+                                        tool_id = getattr(c, 'id', None)
+                                        if tool_id:
+                                            tool_use_ids.add(tool_id)
+                                            print(f"DEBUG: Found tool_use with ID: {tool_id}")
+                                    elif isinstance(c, dict) and c.get("type") == "tool_use":
+                                        tool_id = c.get("id")
+                                        if tool_id:
+                                            tool_use_ids.add(tool_id)
+                                            print(f"DEBUG: Found tool_use with ID: {tool_id}")
+                            break  # Stop at first assistant message found
+                    
+                    print(f"DEBUG: All valid tool_use IDs found: {tool_use_ids}")
+                    
+                    # If no tool_use blocks found, remove ALL tool_result blocks
+                    if not tool_use_ids:
+                        print(f"DEBUG: No tool_use blocks found - removing ALL {len(tool_results)} tool_result blocks")
+                        original_count = len(message["content"])
+                        valid_content = []
+                        removed_count = 0
+                        for content_block in message["content"]:
+                            if content_block.get("type") == "tool_result":
+                                print(f"DEBUG: Removing orphaned tool_result with ID: {content_block.get('tool_use_id')}")
+                                removed_count += 1
+                                continue
+                            valid_content.append(content_block)
+                        message["content"] = valid_content
+                        print(f"DEBUG: Removed {removed_count} orphaned tool_results. Content blocks: {original_count} -> {len(valid_content)}")
+                    else:
+                        # Remove only orphaned tool_results
+                        original_count = len(message["content"])
+                        valid_content = []
+                        removed_count = 0
+                        for content_block in message["content"]:
+                            if content_block.get("type") == "tool_result":
+                                tool_result_id = content_block.get("tool_use_id")
+                                print(f"DEBUG: Checking tool_result with ID: {tool_result_id}")
+                                if tool_result_id not in tool_use_ids:
+                                    print(f"DEBUG: Removing orphaned tool_result with ID: {tool_result_id}")
+                                    removed_count += 1
+                                    continue
+                                else:
+                                    print(f"DEBUG: Keeping valid tool_result with ID: {tool_result_id}")
+                            valid_content.append(content_block)
+                        message["content"] = valid_content
+                        print(f"DEBUG: Removed {removed_count} orphaned tool_results. Content blocks: {original_count} -> {len(valid_content)}")
+
+    def __call__(self, content, stream_callback=None):
+        """Main call method with optional streaming support."""
+        print(f"DEBUG: LLM.__call__ received content with {len(content)} items:")
+        for i, item in enumerate(content):
+            item_type = item.get('type') if isinstance(item, dict) else getattr(item, 'type', 'unknown')
+            print(f"DEBUG:   Item {i}: {item_type}")
+            if item_type == 'tool_result':
+                tool_use_id = item.get('tool_use_id') if isinstance(item, dict) else getattr(item, 'tool_use_id', 'unknown')
+                print(f"DEBUG:     tool_use_id: {tool_use_id}")
+        
+        self.messages.append({"role": "user", "content": content})
+        
+        # Add cache control to the last content item if it exists
+        user_message = self.messages[-1]
+        if user_message.get("content") and len(user_message["content"]) > 0:
+            user_message["content"][-1]["cache_control"] = {"type": "ephemeral"}
+        
+        # Validate message structure to prevent orphaned tool_result blocks
+        # This must happen AFTER adding the user message since tool_results are in the new message
+        self._validate_message_structure()
+        
+        try:
+            # Use streaming if callback provided
+            if stream_callback:
+                # Get response from streaming
+                response_text, tool_calls = self._call_with_streaming(stream_callback)
+                
+                # Build assistant message for streaming response
+                assistant_response = {"role": "assistant", "content": []}
+                
+                # Add text content if any
+                if response_text:
+                    assistant_response["content"].append({"type": "text", "text": response_text})
+                
+                # Add tool_use blocks
+                for tool_call in tool_calls:
+                    # Create a proper tool_use content block as a dict
+                    tool_use_block = {
+                        'type': 'tool_use',
+                        'id': tool_call['id'],
+                        'name': tool_call['name'],
+                        'input': tool_call['input']
+                    }
+                    assistant_response["content"].append(tool_use_block)
+                
+                # Append assistant message to conversation history
+                print(f"DEBUG: Appending streaming assistant response. Messages before: {len(self.messages)}")
+                self.messages.append(assistant_response)
+                print(f"DEBUG: Messages after: {len(self.messages)}")
+                
+                # Clean up cache control from user message
+                self._remove_cache_control()
+                
+                # Return the expected format
+                return response_text, tool_calls
+            else:
+                response = self._call_anthropic()
         except (RateLimitError, APIError) as e:
             print(f"\nRate limit or API error occurred: {str(e)}")
             raise
         finally:
-            del self.messages[-1]["content"][-1]["cache_control"]
+            # Clean up cache control safely
+            self._remove_cache_control()
         
         # Track token usage
         if hasattr(response, 'usage'):
@@ -2499,6 +3005,7 @@ class LLM:
                 text_content = content.text
                 output_text += text_content
                 assistant_response["content"].append({"type": "text", "text": text_content})
+                print(f"DEBUG: Adding text content to assistant response: {len(text_content)} chars")
             elif content.type == "tool_use":
                 assistant_response["content"].append(content)
                 tool_calls.append({
@@ -2506,8 +3013,16 @@ class LLM:
                     "name": content.name,
                     "input": content.input
                 })
+                print(f"DEBUG: Adding tool_use to assistant response: {content.name} with ID: {content.id}")
 
+        print(f"DEBUG: Appending assistant response to messages. Total messages before: {len(self.messages)}")
+        print(f"DEBUG: Assistant response content blocks: {len(assistant_response['content'])}")
+        for i, content in enumerate(assistant_response['content']):
+            content_type = content.get('type') if isinstance(content, dict) else getattr(content, 'type', 'unknown')
+            print(f"DEBUG:   Assistant content {i}: {content_type}")
+        
         self.messages.append(assistant_response)
+        print(f"DEBUG: Total messages after adding assistant response: {len(self.messages)}")
         return output_text, tool_calls
 
 
