@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/robertwendt/bash-agent/agent.py", line 4, in <module>
+    from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+ModuleNotFoundError: No module named 'tenacity'

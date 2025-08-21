@@ -29,8 +29,9 @@ from github_rag import GitHubRAG
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_dir = os.path.join(script_dir, 'templates')
+static_dir = os.path.join(script_dir, 'static')
 
-app = Flask(__name__, template_folder=template_dir)
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir, static_url_path='/static')
 app.config['SECRET_KEY'] = os.urandom(24)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
