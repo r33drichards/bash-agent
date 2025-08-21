@@ -11,6 +11,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    
+    <!-- FilePond CSS -->
+    <link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet">
+    <link href="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css" rel="stylesheet">
+    
+    <!-- FilePond JS -->
+    <script src="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.js"></script>
+    <script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.js"></script>
+    <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
     <style>
         * {
             margin: 0;
@@ -506,6 +515,138 @@
             background-color: rgba(31, 111, 235, 0.1) !important;
         }
 
+        .attached-files {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 12px;
+            margin: 0 20px 12px 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .attached-files-header {
+            font-weight: 600;
+            color: #79c0ff;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .attached-files-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .attached-file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 8px;
+            background-color: #0d1117;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #e6edf3;
+        }
+
+        .attached-file-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .attached-file-remove {
+            color: #f85149;
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+
+        .attached-file-remove:hover {
+            color: #ff7b72;
+        }
+
+        /* Slack-like input styling */
+        .input-wrapper {
+            background-color: #161b22;
+            border-top: 1px solid #21262d;
+            padding: 16px 20px;
+        }
+
+        .file-pond-wrapper {
+            margin-bottom: 12px;
+        }
+
+        /* Override FilePond dark theme */
+        .filepond--root {
+            font-family: inherit;
+            background-color: #0d1117;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+
+        .filepond--panel-root {
+            background-color: #0d1117;
+            border-radius: 6px;
+        }
+
+        .filepond--drop-label {
+            color: #7d8590;
+            font-size: 13px;
+        }
+
+        .filepond--label-action {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+
+        .filepond--item {
+            margin-bottom: 8px;
+        }
+
+        .filepond--item-panel {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+        }
+
+        .filepond--file {
+            color: #e6edf3;
+        }
+
+        .filepond--drip-blob {
+            background-color: #238636;
+        }
+
+        /* File preview cards */
+        .file-preview-card {
+            display: inline-block;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 8px;
+            margin: 4px;
+            max-width: 200px;
+            vertical-align: top;
+        }
+
+        .file-preview-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+
+        .file-preview-name {
+            font-size: 11px;
+            color: #7d8590;
+            margin-top: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .tool-confirmation {
             background-color: #161b22;
             border: 1px solid #f85149;
@@ -714,6 +855,18 @@
             color: #7d8590;
         }
 
+        /* Streaming cursor animation */
+        .streaming-cursor {
+            color: #79c0ff;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
         @media (max-width: 768px) {
             .header {
                 padding: 8px 16px;
@@ -787,16 +940,25 @@
             Agent is typing...
         </div>
         
-        <div class="input-container">
-            <textarea 
-                class="input-field" 
-                id="message-input" 
-                placeholder="Type your message here..."
-                rows="1"
-            ></textarea>
-            <input type="file" id="file-input" style="display: none;" multiple>
-            <button class="send-button" id="file-upload-button" style="margin-right: 8px;">📁 Upload</button>
-            <button class="send-button" id="send-button">Send</button>
+        <div class="input-wrapper">
+            <!-- FilePond container for file handling -->
+            <div class="file-pond-wrapper" id="file-pond-wrapper" style="display: none;">
+                <input type="file" 
+                    class="filepond"
+                    id="file-pond-input"
+                    multiple>
+            </div>
+            
+            <div class="input-container">
+                <textarea 
+                    class="input-field" 
+                    id="message-input" 
+                    placeholder="Type your message here... (Paste images with Cmd/Ctrl+V)"
+                    rows="1"
+                ></textarea>
+                <button class="send-button" id="file-upload-button" style="margin-right: 8px;">📁</button>
+                <button class="send-button" id="send-button">Send</button>
+            </div>
         </div>
     </div>
 
@@ -805,7 +967,6 @@
         const messages = document.getElementById('messages');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
-        const fileInput = document.getElementById('file-input');
         const fileUploadButton = document.getElementById('file-upload-button');
         const statusText = document.getElementById('status-text');
         const typingIndicator = document.getElementById('typing-indicator');
@@ -824,11 +985,12 @@
         let currentTokenCount = 0;
         let currentInputTokens = 0;
         let currentOutputTokens = 0;
-
+        let pond = null;
+        let attachedFileContents = [];
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            this.style.height = Math.min(this.scrollHeight, 400) + 'px';
         });
 
         // Send message on Enter (but allow Shift+Enter for new lines)
@@ -841,38 +1003,73 @@
 
         sendButton.addEventListener('click', sendMessage);
 
-        // File upload functionality
+        // Initialize FilePond with plugins
+        console.log('Initializing FilePond...');
+        
+        // Check if FilePond libraries are loaded
+        if (typeof FilePond === 'undefined') {
+            console.error('FilePond not loaded!');
+            // Don't continue if FilePond isn't loaded
+        } else {
+        
+        console.log('FilePond plugins available:', {
+            ImagePreview: typeof FilePondPluginImagePreview !== 'undefined',
+            FileValidateType: typeof FilePondPluginFileValidateType !== 'undefined'
+        });
+
+        FilePond.registerPlugin(
+            FilePondPluginImagePreview,
+            FilePondPluginFileValidateType
+        );
+
+        // Create FilePond instance
+        const filePondInput = document.getElementById('file-pond-input');
+        console.log('FilePond input element:', filePondInput);
+        
+        pond = FilePond.create(filePondInput, {
+            allowMultiple: true,
+            allowDrop: true,
+            instantUpload: false,
+            server: null, // We'll handle uploads manually
+            labelIdle: 'Drop files here or <span class="filepond--label-action">Browse</span>',
+            styleButtonRemoveItemPosition: 'right',
+            onaddfile: (error, file) => {
+                console.log('File added:', file, error);
+                if (!error) {
+                    handleFileAdded(file);
+                }
+            },
+            onremovefile: (error, file) => {
+                console.log('File removed:', file, error);
+                if (!error) {
+                    handleFileRemoved(file);
+                }
+            }
+        });
+        
+        console.log('FilePond instance created:', pond);
+
+        // File upload button toggles FilePond visibility
         fileUploadButton.addEventListener('click', function() {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', function(e) {
-            if (e.target.files.length > 0) {
-                uploadFiles(e.target.files);
-            }
-        });
-
-        // Drag and drop functionality
-        document.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            document.body.classList.add('drag-over');
-        });
-
-        document.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            if (e.clientX === 0 && e.clientY === 0) {
-                document.body.classList.remove('drag-over');
-            }
-        });
-
-        document.addEventListener('drop', function(e) {
-            e.preventDefault();
-            document.body.classList.remove('drag-over');
+            console.log('Upload button clicked');
+            const wrapper = document.getElementById('file-pond-wrapper');
+            console.log('Wrapper element:', wrapper);
+            console.log('Current display style:', wrapper.style.display);
             
-            if (e.dataTransfer.files.length > 0) {
-                uploadFiles(e.dataTransfer.files);
+            if (wrapper.style.display === 'none' || wrapper.style.display === '') {
+                wrapper.style.display = 'block';
+                fileUploadButton.style.backgroundColor = '#30363d';
+                console.log('Showing FilePond wrapper');
+            } else {
+                wrapper.style.display = 'none';
+                fileUploadButton.style.backgroundColor = '#21262d';
+                console.log('Hiding FilePond wrapper');
             }
         });
+        
+        } // End of FilePond initialization else block
+
+        // Old drag and drop functionality removed - FilePond handles this now
 
         // Auto-confirm toggle
         autoConfirmToggle.addEventListener('click', function() {
@@ -905,43 +1102,130 @@
         function sendMessage() {
             const message = messageInput.value.trim();
             if (message && isConnected) {
-                socket.emit('user_message', { message: message });
+                socket.emit('user_message', { 
+                    message: message,
+                    files: attachedFileContents
+                });
                 messageInput.value = '';
                 messageInput.style.height = 'auto';
+                clearFiles();
                 showTyping();
             }
         }
 
-        function uploadFiles(files) {
-            if (!isConnected) return;
+        // Handle files added to FilePond
+        async function handleFileAdded(file) {
+            console.log('handleFileAdded called with:', file);
+            const actualFile = file.file;
+            console.log('Actual file object:', actualFile);
             
-            for (const file of files) {
+            try {
                 const formData = new FormData();
-                formData.append('file', file);
+                formData.append('files', actualFile);
                 
-                // Show upload progress message
-                addMessage('system', `Uploading file: ${file.name}`, new Date().toISOString());
-                
-                fetch('/api/upload', {
+                console.log('Uploading file to /api/upload...');
+                const response = await fetch('/api/upload', {
                     method: 'POST',
                     body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        addMessage('system', `✅ File uploaded: ${data.filename}`, new Date().toISOString());
-                    } else {
-                        addMessage('error', `❌ Upload failed: ${data.error}`, new Date().toISOString());
-                    }
-                })
-                .catch(error => {
-                    addMessage('error', `❌ Upload error: ${error.message}`, new Date().toISOString());
                 });
+                
+                console.log('Upload response:', response);
+                const data = await response.json();
+                console.log('Upload data:', data);
+                
+                if (data.success && data.files) {
+                    // Store file contents for later use
+                    attachedFileContents = attachedFileContents.concat(data.files);
+                    console.log('Updated attachedFileContents:', attachedFileContents);
+                    updateMessageWithFiles();
+                } else {
+                    console.error('Upload failed:', data);
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
             }
-            
-            // Clear file input
-            fileInput.value = '';
         }
+
+        // Handle files removed from FilePond
+        function handleFileRemoved(file) {
+            // Remove from attached files array
+            attachedFileContents = attachedFileContents.filter(f => 
+                f.name !== file.filename
+            );
+            updateMessageWithFiles();
+        }
+
+        // Update message input with file contents
+        function updateMessageWithFiles() {
+            // Get user's text (without file markers)
+            let userText = messageInput.value;
+            
+            // Remove any existing file content markers
+            userText = userText.replace(/\n\n--- File: .* ---[\s\S]*?--- End of .* ---\n/g, '');
+            userText = userText.replace(/\n\n\[Image: .*\]/g, '');
+            
+            // Add current files
+            let fileContent = '';
+            attachedFileContents.forEach(file => {
+                if (file.type === 'image') {
+                    // Just show a clean image reference
+                    fileContent += `\n\n[Image: ${file.name}]`;
+                } else if (file.content && file.type === 'text') {
+                    // For small text files with direct content
+                    fileContent += `\n\n--- File: ${file.name} ---\n${file.content}\n--- End of ${file.name} ---\n`;
+                } else {
+                    // For large files or binary files (file_id only)
+                    fileContent += `\n\n[File: ${file.name}]`;
+                }
+            });
+            
+            messageInput.value = userText + fileContent;
+            
+            // Update textarea height
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 400) + 'px';
+        }
+
+        // Clear files when message is sent
+        function clearFiles() {
+            if (pond) {
+                pond.removeFiles();
+            }
+            attachedFileContents = [];
+            const wrapper = document.getElementById('file-pond-wrapper');
+            wrapper.style.display = 'none';
+            fileUploadButton.style.backgroundColor = '#21262d';
+        }
+
+        // Fallback paste handler for textarea
+        messageInput.addEventListener('paste', function(e) {
+            console.log('Paste event on textarea:', e);
+            const items = e.clipboardData.items;
+            console.log('Clipboard items:', items);
+            
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                console.log('Clipboard item:', item, 'type:', item.type, 'kind:', item.kind);
+                
+                if (item.type.indexOf('image') !== -1) {
+                    console.log('Image detected in paste!');
+                    e.preventDefault();
+                    
+                    const file = item.getAsFile();
+                    console.log('File:', file);
+                    
+                    if (file && pond) {
+                        // Show FilePond if hidden
+                        const wrapper = document.getElementById('file-pond-wrapper');
+                        wrapper.style.display = 'block';
+                        fileUploadButton.style.backgroundColor = '#30363d';
+                        
+                        // Add to FilePond
+                        pond.addFile(file);
+                    }
+                }
+            }
+        });
 
         function addMessage(type, content, timestamp) {
             const messageEl = document.createElement('div');
@@ -1295,6 +1579,51 @@
             animate();
         }
 
+        // Streaming helper functions
+        function createStreamingMessage(messageData) {
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${messageData.type}`;
+            
+            const time = new Date(messageData.timestamp).toLocaleTimeString();
+            const typeLabel = messageData.type === 'agent' ? 'Agent' : messageData.type;
+            
+            messageEl.innerHTML = `
+                <div class="message-header">
+                    <strong>${typeLabel}</strong>
+                    <span class="timestamp">${time}</span>
+                </div>
+                <div class="message-content">
+                    <span class="streaming-cursor">▎</span>
+                </div>
+            `;
+            
+            messages.appendChild(messageEl);
+            messages.scrollTop = messages.scrollHeight;
+            hideTyping();
+            
+            return messageEl;
+        }
+        
+        function updateStreamingMessage(element, messageData) {
+            const contentEl = element.querySelector('.message-content');
+            if (contentEl) {
+                // Render as markdown and add cursor
+                const contentHtml = marked.parse(messageData.content);
+                contentEl.innerHTML = contentHtml + '<span class="streaming-cursor">▎</span>';
+                messages.scrollTop = messages.scrollHeight;
+            }
+        }
+        
+        function finalizeStreamingMessage(element, finalData) {
+            const contentEl = element.querySelector('.message-content');
+            if (contentEl) {
+                // Remove cursor and render final content
+                const contentHtml = marked.parse(finalData.content);
+                contentEl.innerHTML = contentHtml;
+                messages.scrollTop = messages.scrollHeight;
+            }
+        }
+
         // Socket event handlers
         socket.on('connect', function() {
             isConnected = true;
@@ -1317,6 +1646,37 @@
             statusText.textContent = 'Disconnected';
             sendButton.disabled = true;
             hideTyping();
+        });
+
+        // Handle streaming message chunks
+        let currentStreamingMessage = null;
+        let currentStreamingElement = null;
+        
+        socket.on('message_chunk', function(data) {
+            if (data.type === 'agent') {
+                if (!currentStreamingMessage) {
+                    // Start new streaming message
+                    currentStreamingMessage = {
+                        type: 'agent',
+                        content: '',
+                        timestamp: data.timestamp
+                    };
+                    currentStreamingElement = createStreamingMessage(currentStreamingMessage);
+                }
+                
+                // Add chunk to content
+                currentStreamingMessage.content += data.chunk;
+                updateStreamingMessage(currentStreamingElement, currentStreamingMessage);
+            }
+        });
+        
+        socket.on('message_complete', function(data) {
+            // Finalize streaming message
+            if (currentStreamingMessage && currentStreamingElement) {
+                finalizeStreamingMessage(currentStreamingElement, data);
+                currentStreamingMessage = null;
+                currentStreamingElement = null;
+            }
         });
 
         socket.on('message', function(data) {

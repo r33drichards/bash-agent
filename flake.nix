@@ -50,7 +50,16 @@
         webAgentPackage = pkgs.stdenv.mkDerivation {
           name = "web-agent";
           src = ./.;
+          nativeBuildInputs = [ pythonEnv ];
           buildInputs = [ pythonEnv ];
+          checkPhase = ''
+            runHook preCheck
+            echo "Running tests..."
+            cd $src
+            ${testPythonEnv}/bin/python -m pytest -v --tb=short -W ignore::pytest.PytestCacheWarning .
+            runHook postCheck
+          '';
+          doCheck = true;
           installPhase = ''
             mkdir -p $out/bin $out/share/bash-agent
             cp -r . $out/share/bash-agent/
@@ -67,8 +76,7 @@
         bashAgentScript = bashAgentPackage;
         webAgentScript = webAgentPackage;
 
-        pythonEnv = pkgs.python3.withPackages (ps:
-          with ps; [
+        pythonPackages = ps: with ps; [
             anthropic
             tenacity
             matplotlib
@@ -97,7 +105,15 @@
             langchain-chroma
             langchain-core
             fpdf
-          ]);
+        ];
+
+        testPythonPackages = ps: with ps; [
+          pytest
+        ] ++ pythonPackages ps;
+
+        pythonEnv = pkgs.python3.withPackages pythonPackages;
+
+        testPythonEnv = pkgs.python3.withPackages testPythonPackages;
 
         # Web agent entrypoint
         agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
