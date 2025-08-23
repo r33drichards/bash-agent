@@ -299,6 +299,329 @@
             display: block;
         }
 
+        /* File Browser Styles */
+        .file-browser-panel {
+            position: fixed;
+            top: 0;
+            right: -60%;
+            width: 60%;
+            min-width: 800px;
+            height: 100vh;
+            background-color: #161b22;
+            border-left: 1px solid #21262d;
+            z-index: 1000;
+            transition: right 0.3s ease;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .file-browser-panel.open {
+            right: 0;
+        }
+
+        .file-browser-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .file-browser-overlay.open {
+            display: block;
+        }
+
+        .file-browser-header {
+            padding: 16px;
+            border-bottom: 1px solid #21262d;
+            background-color: #0d1117;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .file-browser-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .file-browser-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: #7d8590;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .file-browser-close:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .file-browser-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .file-browser-toolbar {
+            padding: 12px 16px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            gap: 8px;
+            background-color: #0d1117;
+            flex-shrink: 0;
+        }
+
+        .file-browser-btn {
+            background-color: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .file-browser-btn:hover {
+            background-color: #30363d;
+        }
+
+        .file-browser-breadcrumb {
+            padding: 8px 16px;
+            background-color: #0d1117;
+            border-bottom: 1px solid #21262d;
+            font-family: monospace;
+            font-size: 12px;
+            color: #7d8590;
+            flex-shrink: 0;
+        }
+
+        .breadcrumb-item {
+            color: #58a6ff;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            margin: 0 6px;
+            color: #7d8590;
+        }
+
+        .file-browser-main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .file-browser-list {
+            flex: 1;
+            overflow-y: auto;
+            background-color: #161b22;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            border-bottom: 1px solid #21262d;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .file-item:hover {
+            background-color: #0d1117;
+        }
+
+        .file-item.selected {
+            background-color: #1f6feb;
+            color: #ffffff;
+        }
+
+        .file-icon {
+            width: 24px;
+            text-align: center;
+            margin-right: 12px;
+            font-size: 14px;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 500;
+            margin-bottom: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-meta {
+            font-size: 11px;
+            color: #7d8590;
+            display: flex;
+            gap: 12px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .file-item:hover .file-actions {
+            opacity: 1;
+        }
+
+        .file-action-btn {
+            background: none;
+            border: none;
+            color: #7d8590;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .file-action-btn:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .file-browser-preview {
+            width: 350px;
+            border-left: 1px solid #21262d;
+            background-color: #0d1117;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #21262d;
+            font-weight: 600;
+            color: #f0f6fc;
+            background-color: #161b22;
+        }
+
+        .preview-content {
+            flex: 1;
+            padding: 16px;
+            overflow: auto;
+        }
+
+        .preview-placeholder {
+            text-align: center;
+            color: #7d8590;
+            font-style: italic;
+            margin-top: 50px;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+        }
+
+        .preview-text {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #e6edf3;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 12px;
+        }
+
+        .preview-file-info {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+        }
+
+        .preview-file-info h4 {
+            margin: 0 0 8px 0;
+            color: #f0f6fc;
+        }
+
+        .preview-file-info p {
+            margin: 4px 0;
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        /* Loading spinner */
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #21262d;
+            border-radius: 50%;
+            border-top-color: #58a6ff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1200px) {
+            .file-browser-panel {
+                width: 80%;
+                min-width: 600px;
+                right: -80%;
+            }
+            .file-browser-preview {
+                width: 300px;
+            }
+        }
+
+        @media (max-width: 800px) {
+            .file-browser-panel {
+                width: 100%;
+                min-width: 0;
+                right: -100%;
+            }
+            .file-browser-main {
+                flex-direction: column;
+            }
+            .file-browser-preview {
+                width: 100%;
+                height: 300px;
+                border-left: none;
+                border-top: 1px solid #21262d;
+            }
+        }
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -906,6 +1229,7 @@
                     </span>
                 </div>
             </div>
+            <button class="history-button" id="file-browser-button" style="background-color: #2ea043 !important;">📁 Files</button>
             <button class="history-button" id="history-button">History</button>
             <div class="toggle-container">
                 <span class="toggle-label">Auto-confirm</span>
@@ -928,6 +1252,51 @@
         </div>
         <div class="history-content" id="history-content">
             <!-- History conversations will be added here -->
+        </div>
+    </div>
+
+    <!-- File Browser Panel -->
+    <div class="file-browser-overlay" id="file-browser-overlay"></div>
+    <div class="file-browser-panel" id="file-browser-panel">
+        <div class="file-browser-header">
+            <div class="file-browser-title">File Browser</div>
+            <button class="file-browser-close" id="file-browser-close">×</button>
+        </div>
+        <div class="file-browser-content">
+            <!-- Toolbar -->
+            <div class="file-browser-toolbar">
+                <button class="file-browser-btn" id="upload-btn" title="Upload Files">
+                    <span>📁</span> Upload
+                </button>
+                <button class="file-browser-btn" id="new-folder-btn" title="Create Folder">
+                    <span>📁</span> New Folder
+                </button>
+                <button class="file-browser-btn" id="refresh-btn" title="Refresh">
+                    <span>🔄</span> Refresh
+                </button>
+                <input type="file" id="file-upload-input" multiple style="display: none;">
+            </div>
+            
+            <!-- Breadcrumb -->
+            <div class="file-browser-breadcrumb" id="file-browser-breadcrumb">
+                <!-- Breadcrumb will be populated here -->
+            </div>
+            
+            <!-- Main Content Area -->
+            <div class="file-browser-main">
+                <!-- File List -->
+                <div class="file-browser-list" id="file-browser-list">
+                    <!-- Files and folders will be populated here -->
+                </div>
+                
+                <!-- Preview Panel -->
+                <div class="file-browser-preview" id="file-browser-preview">
+                    <div class="preview-header">Preview</div>
+                    <div class="preview-content" id="preview-content">
+                        <div class="preview-placeholder">Select a file to preview</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1090,6 +1459,359 @@
         historyOverlay.addEventListener('click', function() {
             closeHistoryPanel();
         });
+
+        // File Browser controls
+        const fileBrowserButton = document.getElementById('file-browser-button');
+        const fileBrowserPanel = document.getElementById('file-browser-panel');
+        const fileBrowserOverlay = document.getElementById('file-browser-overlay');
+        const fileBrowserClose = document.getElementById('file-browser-close');
+        const fileBrowserList = document.getElementById('file-browser-list');
+        const fileBrowserBreadcrumb = document.getElementById('file-browser-breadcrumb');
+        const previewContent = document.getElementById('preview-content');
+        const uploadBtn = document.getElementById('upload-btn');
+        const newFolderBtn = document.getElementById('new-folder-btn');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const fileUploadInput = document.getElementById('file-upload-input');
+        
+        let currentPath = '';
+        let selectedFile = null;
+        
+        fileBrowserButton.addEventListener('click', function() {
+            openFileBrowser();
+        });
+        
+        fileBrowserClose.addEventListener('click', function() {
+            closeFileBrowser();
+        });
+        
+        fileBrowserOverlay.addEventListener('click', function() {
+            closeFileBrowser();
+        });
+        
+        uploadBtn.addEventListener('click', function() {
+            fileUploadInput.click();
+        });
+        
+        fileUploadInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                uploadFiles(this.files, currentPath);
+            }
+        });
+        
+        newFolderBtn.addEventListener('click', function() {
+            createNewFolder();
+        });
+        
+        refreshBtn.addEventListener('click', function() {
+            loadDirectory(currentPath);
+        });
+        
+        function openFileBrowser() {
+            fileBrowserPanel.classList.add('open');
+            fileBrowserOverlay.classList.add('open');
+            if (!currentPath) {
+                loadDirectory('');
+            }
+        }
+        
+        function closeFileBrowser() {
+            fileBrowserPanel.classList.remove('open');
+            fileBrowserOverlay.classList.remove('open');
+        }
+        
+        async function loadDirectory(path = '') {
+            try {
+                console.log('Loading directory:', path);
+                const url = `/api/files?path=${encodeURIComponent(path)}`;
+                console.log('API URL:', url);
+                
+                const response = await fetch(url);
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('API Response:', data);
+                
+                if (data.success) {
+                    currentPath = data.path;
+                    displayFiles(data.items);
+                    updateBreadcrumb(data.path, data.parent);
+                } else {
+                    showError('Failed to load directory: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Directory loading error:', error);
+                showError('Network error: ' + error.message);
+            }
+        }
+        
+        function displayFiles(items) {
+            console.log('Displaying files:', items);
+            fileBrowserList.innerHTML = '';
+            
+            if (!items || items.length === 0) {
+                fileBrowserList.innerHTML = '<div style="padding: 20px; text-align: center; color: #7d8590;">No files found in current directory</div>';
+                return;
+            }
+            
+            items.forEach(item => {
+                const fileElement = document.createElement('div');
+                fileElement.className = 'file-item';
+                fileElement.innerHTML = `
+                    <div class="file-icon">${item.icon}</div>
+                    <div class="file-details">
+                        <div class="file-name">${item.name}</div>
+                        <div class="file-meta">
+                            <span>${item.size_formatted}</span>
+                            <span>${new Date(item.modified).toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="file-action-btn" title="Download" data-action="download">⬇️</button>
+                        ${!item.is_dir ? '<button class="file-action-btn" title="Preview" data-action="preview">👁️</button>' : ''}
+                        <button class="file-action-btn" title="Delete" data-action="delete">🗑️</button>
+                    </div>
+                `;
+                
+                // Click handler for navigation and selection
+                fileElement.addEventListener('click', function(e) {
+                    if (e.target.closest('.file-actions')) return;
+                    
+                    // Remove previous selection
+                    document.querySelectorAll('.file-item.selected').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+                    
+                    // Add selection
+                    fileElement.classList.add('selected');
+                    selectedFile = item;
+                    
+                    if (item.is_dir) {
+                        // Double click to navigate into directory
+                        if (e.detail === 2) {
+                            loadDirectory(item.path);
+                        }
+                    } else {
+                        // Preview file
+                        previewFile(item.path);
+                    }
+                });
+                
+                // Action button handlers
+                fileElement.addEventListener('click', function(e) {
+                    const action = e.target.dataset.action;
+                    if (action) {
+                        e.stopPropagation();
+                        switch (action) {
+                            case 'download':
+                                downloadFile(item.path);
+                                break;
+                            case 'preview':
+                                previewFile(item.path);
+                                break;
+                            case 'delete':
+                                deleteFile(item.path, item.name);
+                                break;
+                        }
+                    }
+                });
+                
+                fileBrowserList.appendChild(fileElement);
+            });
+        }
+        
+        function updateBreadcrumb(path, parent) {
+            fileBrowserBreadcrumb.innerHTML = '';
+            
+            if (parent !== null) {
+                const parts = path.split('/');
+                let currentPathPart = '';
+                
+                parts.forEach((part, index) => {
+                    if (part === '') return;
+                    
+                    if (index > 0) {
+                        const separator = document.createElement('span');
+                        separator.className = 'breadcrumb-separator';
+                        separator.textContent = '/';
+                        fileBrowserBreadcrumb.appendChild(separator);
+                    }
+                    
+                    const breadcrumbItem = document.createElement('a');
+                    breadcrumbItem.className = 'breadcrumb-item';
+                    breadcrumbItem.textContent = part || 'Root';
+                    
+                    currentPathPart += (index > 0 ? '/' : '') + part;
+                    const targetPath = currentPathPart;
+                    
+                    breadcrumbItem.addEventListener('click', function() {
+                        loadDirectory(targetPath);
+                    });
+                    
+                    fileBrowserBreadcrumb.appendChild(breadcrumbItem);
+                });
+            } else {
+                fileBrowserBreadcrumb.textContent = 'Root Directory';
+            }
+        }
+        
+        async function previewFile(filePath) {
+            try {
+                previewContent.innerHTML = '<div class="loading-spinner"></div>Loading preview...';
+                
+                const response = await fetch(`/api/preview?path=${encodeURIComponent(filePath)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPreview(data);
+                } else {
+                    previewContent.innerHTML = `<div class="preview-placeholder">Preview failed: ${data.error}</div>`;
+                }
+            } catch (error) {
+                previewContent.innerHTML = `<div class="preview-placeholder">Preview error: ${error.message}</div>`;
+            }
+        }
+        
+        function displayPreview(data) {
+            const fileInfo = data.file_info;
+            let content = `
+                <div class="preview-file-info">
+                    <h4>${fileInfo.name}</h4>
+                    <p><strong>Size:</strong> ${format_file_size(fileInfo.size)}</p>
+                    <p><strong>Modified:</strong> ${new Date(fileInfo.modified).toLocaleString()}</p>
+                    <p><strong>Type:</strong> ${fileInfo.mime_type}</p>
+                </div>
+            `;
+            
+            if (data.type === 'text') {
+                content += `<div class="preview-text">${escapeHtml(data.content)}</div>`;
+                if (data.truncated) {
+                    content += '<p style="color: #f85149; font-size: 12px; margin-top: 8px;">Preview truncated - file is too large</p>';
+                }
+            } else if (data.type === 'image') {
+                content += `<img class="preview-image" src="${data.content}" alt="${fileInfo.name}">`;
+            } else if (data.type === 'binary') {
+                content += `<div class="preview-placeholder">${data.message}</div>`;
+            }
+            
+            previewContent.innerHTML = content;
+        }
+        
+        function downloadFile(filePath) {
+            const link = document.createElement('a');
+            link.href = `/api/download?path=${encodeURIComponent(filePath)}`;
+            link.download = '';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        async function deleteFile(filePath, fileName) {
+            if (!confirm(`Are you sure you want to delete "${fileName}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/delete?path=${encodeURIComponent(filePath)}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadDirectory(currentPath); // Refresh current directory
+                    previewContent.innerHTML = '<div class="preview-placeholder">Select a file to preview</div>';
+                } else {
+                    showError('Failed to delete: ' + data.error);
+                }
+            } catch (error) {
+                showError('Delete error: ' + error.message);
+            }
+        }
+        
+        async function uploadFiles(files, targetPath) {
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            formData.append('path', targetPath);
+            
+            try {
+                const response = await fetch('/api/upload-to-path', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadDirectory(currentPath); // Refresh current directory
+                    if (data.errors.length > 0) {
+                        showError('Some files failed to upload: ' + data.errors.join(', '));
+                    }
+                } else {
+                    showError('Upload failed: ' + data.error);
+                }
+            } catch (error) {
+                showError('Upload error: ' + error.message);
+            }
+            
+            // Reset file input
+            fileUploadInput.value = '';
+        }
+        
+        async function createNewFolder() {
+            const folderName = prompt('Enter folder name:');
+            if (!folderName || !folderName.trim()) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/create_folder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        parent_path: currentPath,
+                        folder_name: folderName.trim()
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadDirectory(currentPath); // Refresh current directory
+                } else {
+                    showError('Failed to create folder: ' + data.error);
+                }
+            } catch (error) {
+                showError('Create folder error: ' + error.message);
+            }
+        }
+        
+        function showError(message) {
+            console.error('File Browser Error:', message);
+            fileBrowserList.innerHTML = `
+                <div style="padding: 20px; color: #f85149; background-color: #161b22; border: 1px solid #f85149; border-radius: 6px; margin: 12px;">
+                    <strong>Error:</strong> ${message}
+                    <br><br>
+                    <button onclick="loadDirectory(currentPath)" style="background: #21262d; color: #e6edf3; border: 1px solid #30363d; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+        
+        function format_file_size(size) {
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (size >= 1024 && i < units.length - 1) {
+                size /= 1024;
+                i++;
+            }
+            return size.toFixed(1) + ' ' + units[i];
+        }
 
         function updateToggleDisplay() {
             if (autoConfirmEnabled) {

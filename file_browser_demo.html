@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Browser Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0d1117;
+            color: #e6edf3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background-color: #161b22;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #f0f6fc;
+        }
+
+        .toolbar {
+            padding: 12px 20px;
+            background-color: #0d1117;
+            border-bottom: 1px solid #21262d;
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            background-color: #21262d;
+            color: #e6edf3;
+            border: 1px solid #30363d;
+            padding: 8px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #30363d;
+        }
+
+        .breadcrumb {
+            padding: 12px 20px;
+            background-color: #0d1117;
+            border-bottom: 1px solid #21262d;
+            font-family: monospace;
+            font-size: 14px;
+            color: #7d8590;
+        }
+
+        .breadcrumb-item {
+            color: #58a6ff;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            background-color: #161b22;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid #21262d;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .file-item:hover {
+            background-color: #0d1117;
+        }
+
+        .file-item.selected {
+            background-color: #1f6feb;
+            color: #ffffff;
+        }
+
+        .file-icon {
+            width: 32px;
+            text-align: center;
+            margin-right: 16px;
+            font-size: 18px;
+        }
+
+        .file-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-weight: 500;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-meta {
+            font-size: 12px;
+            color: #7d8590;
+            display: flex;
+            gap: 20px;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .file-item:hover .file-actions {
+            opacity: 1;
+        }
+
+        .file-action-btn {
+            background: none;
+            border: none;
+            color: #7d8590;
+            cursor: pointer;
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .file-action-btn:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .preview-panel {
+            width: 400px;
+            border-left: 1px solid #21262d;
+            background-color: #0d1117;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .preview-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #21262d;
+            font-weight: 600;
+            color: #f0f6fc;
+            background-color: #161b22;
+        }
+
+        .preview-content {
+            flex: 1;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        .preview-placeholder {
+            text-align: center;
+            color: #7d8590;
+            font-style: italic;
+            margin-top: 60px;
+        }
+
+        .preview-text {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #e6edf3;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 16px;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid #21262d;
+        }
+
+        .preview-file-info {
+            background-color: #161b22;
+            border: 1px solid #21262d;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .preview-file-info h4 {
+            margin: 0 0 12px 0;
+            color: #f0f6fc;
+        }
+
+        .preview-file-info p {
+            margin: 6px 0;
+            font-size: 14px;
+            color: #7d8590;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #21262d;
+            border-radius: 50%;
+            border-top-color: #58a6ff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #f85149;
+            background-color: #161b22;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #f85149;
+            margin: 12px 0;
+        }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main-content {
+                flex-direction: column;
+            }
+            .preview-panel {
+                width: 100%;
+                height: 300px;
+                border-left: none;
+                border-top: 1px solid #21262d;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">📁 File Browser Demo</div>
+        <div>Integrated File System Browser</div>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn" onclick="refreshFiles()">🔄 Refresh</button>
+        <button class="btn" onclick="goUp()">⬆️ Parent Directory</button>
+        <button class="btn" onclick="createFolder()">📁 New Folder</button>
+    </div>
+
+    <div class="breadcrumb" id="breadcrumb">
+        <span>Loading...</span>
+    </div>
+
+    <div class="main-content">
+        <div class="file-list" id="file-list">
+            <div style="padding: 20px; text-align: center; color: #7d8590;">
+                <div class="loading"></div>
+                <div style="margin-top: 10px;">Loading files...</div>
+            </div>
+        </div>
+
+        <div class="preview-panel">
+            <div class="preview-header">File Preview</div>
+            <div class="preview-content" id="preview-content">
+                <div class="preview-placeholder">Select a file to preview</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPath = '';
+        let selectedFile = null;
+        let parentPath = null;
+
+        // Mock data for demonstration since backend isn't running
+        const mockFileData = {
+            success: true,
+            path: '/app',
+            parent: null,
+            items: [
+                {
+                    name: 'templates',
+                    path: '/app/templates',
+                    size: 2048,
+                    size_formatted: '2.0 KB',
+                    modified: '2025-01-23T10:30:00.000Z',
+                    is_dir: true,
+                    is_file: false,
+                    extension: '',
+                    mime_type: 'inode/directory',
+                    icon: '📁'
+                },
+                {
+                    name: 'agent.py',
+                    path: '/app/agent.py',
+                    size: 136857,
+                    size_formatted: '133.6 KB',
+                    modified: '2025-01-23T10:45:00.000Z',
+                    is_dir: false,
+                    is_file: true,
+                    extension: 'py',
+                    mime_type: 'text/x-python',
+                    icon: '🐍'
+                },
+                {
+                    name: 'readme.md',
+                    path: '/app/readme.md',
+                    size: 1762,
+                    size_formatted: '1.7 KB',
+                    modified: '2025-01-23T09:15:00.000Z',
+                    is_dir: false,
+                    is_file: true,
+                    extension: 'md',
+                    mime_type: 'text/markdown',
+                    icon: '📝'
+                },
+                {
+                    name: 'flake.nix',
+                    path: '/app/flake.nix',
+                    size: 7079,
+                    size_formatted: '6.9 KB',
+                    modified: '2025-01-23T08:20:00.000Z',
+                    is_dir: false,
+                    is_file: true,
+                    extension: 'nix',
+                    mime_type: 'text/plain',
+                    icon: '⚙️'
+                },
+                {
+                    name: 'requirements.txt',
+                    path: '/app/requirements.txt',
+                    size: 74,
+                    size_formatted: '74.0 B',
+                    modified: '2025-01-23T08:10:00.000Z',
+                    is_dir: false,
+                    is_file: true,
+                    extension: 'txt',
+                    mime_type: 'text/plain',
+                    icon: '📄'
+                },
+                {
+                    name: 'file_browser_demo.html',
+                    path: '/app/file_browser_demo.html',
+                    size: 12850,
+                    size_formatted: '12.5 KB',
+                    modified: '2025-01-23T10:50:00.000Z',
+                    is_dir: false,
+                    is_file: true,
+                    extension: 'html',
+                    mime_type: 'text/html',
+                    icon: '🌐'
+                }
+            ]
+        };
+
+        async function loadDirectory(path = '') {
+            try {
+                // For demo purposes, use mock data
+                // In real implementation: const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+                const data = mockFileData;
+                
+                if (data.success) {
+                    currentPath = data.path;
+                    parentPath = data.parent;
+                    displayFiles(data.items);
+                    updateBreadcrumb(data.path);
+                } else {
+                    showError('Failed to load directory: ' + data.error);
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
+        }
+
+        function displayFiles(items) {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '';
+
+            items.forEach(item => {
+                const fileElement = document.createElement('div');
+                fileElement.className = 'file-item';
+                fileElement.innerHTML = `
+                    <div class="file-icon">${item.icon}</div>
+                    <div class="file-details">
+                        <div class="file-name">${item.name}</div>
+                        <div class="file-meta">
+                            <span>${item.size_formatted}</span>
+                            <span>${new Date(item.modified).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="file-action-btn" title="Download" onclick="downloadFile('${item.path}')">⬇️</button>
+                        ${!item.is_dir ? `<button class="file-action-btn" title="Preview" onclick="previewFile('${item.path}')">👁️</button>` : ''}
+                        <button class="file-action-btn" title="Delete" onclick="deleteFile('${item.path}', '${item.name}')">🗑️</button>
+                    </div>
+                `;
+
+                fileElement.addEventListener('click', function(e) {
+                    if (e.target.closest('.file-actions')) return;
+
+                    // Remove previous selection
+                    document.querySelectorAll('.file-item.selected').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+
+                    // Add selection
+                    fileElement.classList.add('selected');
+                    selectedFile = item;
+
+                    if (item.is_dir) {
+                        // Double click to navigate
+                        if (e.detail === 2) {
+                            loadDirectory(item.path);
+                        }
+                    } else {
+                        previewFile(item.path);
+                    }
+                });
+
+                fileList.appendChild(fileElement);
+            });
+        }
+
+        function updateBreadcrumb(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            
+            if (path === '/app') {
+                breadcrumb.innerHTML = '<span class="breadcrumb-item" onclick="loadDirectory(\'\')">/app (Root)</span>';
+            } else {
+                const parts = path.split('/').filter(p => p);
+                let currentPathPart = '';
+                let breadcrumbHTML = '';
+                
+                parts.forEach((part, index) => {
+                    if (index > 0) {
+                        breadcrumbHTML += '<span> / </span>';
+                    }
+                    currentPathPart += '/' + part;
+                    breadcrumbHTML += `<span class="breadcrumb-item" onclick="loadDirectory('${currentPathPart}')">${part}</span>`;
+                });
+                
+                breadcrumb.innerHTML = breadcrumbHTML;
+            }
+        }
+
+        async function previewFile(filePath) {
+            const previewContent = document.getElementById('preview-content');
+            previewContent.innerHTML = '<div class="loading"></div> Loading preview...';
+
+            // Mock preview data for demo
+            setTimeout(() => {
+                const fileName = filePath.split('/').pop();
+                const mockPreviewData = {
+                    success: true,
+                    type: 'text',
+                    content: `# This is a preview of ${fileName}\n\nThis is mock content for demonstration purposes.\nIn a real implementation, this would show the actual file content.\n\n## Features Demonstrated:\n- File listing with icons\n- Directory navigation\n- File preview\n- Responsive design\n- Modern dark theme\n\nThe actual file browser implementation includes:\n- Real file system access\n- Text file preview\n- Image preview\n- File upload/download\n- File operations (create, delete)\n- Security controls`,
+                    file_info: {
+                        name: fileName,
+                        size: Math.floor(Math.random() * 10000),
+                        modified: new Date().toISOString(),
+                        mime_type: 'text/plain'
+                    }
+                };
+
+                displayPreview(mockPreviewData);
+            }, 500);
+        }
+
+        function displayPreview(data) {
+            const previewContent = document.getElementById('preview-content');
+            const fileInfo = data.file_info;
+            
+            let content = `
+                <div class="preview-file-info">
+                    <h4>${fileInfo.name}</h4>
+                    <p><strong>Size:</strong> ${formatFileSize(fileInfo.size)}</p>
+                    <p><strong>Modified:</strong> ${new Date(fileInfo.modified).toLocaleString()}</p>
+                    <p><strong>Type:</strong> ${fileInfo.mime_type}</p>
+                </div>
+            `;
+
+            if (data.type === 'text') {
+                content += `<div class="preview-text">${escapeHtml(data.content)}</div>`;
+            } else if (data.type === 'image') {
+                content += `<img class="preview-image" src="${data.content}" alt="${fileInfo.name}">`;
+            } else {
+                content += `<div class="preview-placeholder">${data.message || 'Preview not available'}</div>`;
+            }
+
+            previewContent.innerHTML = content;
+        }
+
+        function downloadFile(filePath) {
+            // Mock download - in real implementation would trigger actual download
+            alert(`Download functionality would download: ${filePath}`);
+        }
+
+        function deleteFile(filePath, fileName) {
+            if (!confirm(`Are you sure you want to delete "${fileName}"?`)) {
+                return;
+            }
+            alert(`Delete functionality would delete: ${filePath}`);
+        }
+
+        function refreshFiles() {
+            loadDirectory(currentPath);
+        }
+
+        function goUp() {
+            if (parentPath !== null) {
+                loadDirectory(parentPath);
+            }
+        }
+
+        function createFolder() {
+            const folderName = prompt('Enter folder name:');
+            if (folderName && folderName.trim()) {
+                alert(`Create folder functionality would create: ${folderName}`);
+            }
+        }
+
+        function showError(message) {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        function formatFileSize(size) {
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (size >= 1024 && i < units.length - 1) {
+                size /= 1024;
+                i++;
+            }
+            return size.toFixed(1) + ' ' + units[i];
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initialize the file browser
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDirectory('');
+        });
+    </script>
+</body>
+</html>
