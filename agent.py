@@ -104,8 +104,9 @@ def load_conversation_history():
     
     return conversations
 
-# File Browser Configuration
-ROOT_PATH = os.getcwd()  # Use current working directory
+# File Browser Configuration  
+# Will be set after command line arguments are parsed
+ROOT_PATH = None
 IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'}
 TEXT_EXTENSIONS = {'txt', 'py', 'js', 'html', 'css', 'json', 'xml', 'md', 'yml', 'yaml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'ps1'}
 ARCHIVE_EXTENSIONS = {'zip', 'tar', 'gz', 'rar', '7z'}
@@ -126,8 +127,10 @@ BLOCKED_PATTERNS = {
 def is_safe_path(path):
     """Check if path is safe to access"""
     try:
+        global ROOT_PATH
+        current_root = ROOT_PATH or os.getcwd()
         real_path = os.path.realpath(path)
-        root_real = os.path.realpath(ROOT_PATH)
+        root_real = os.path.realpath(current_root)
         return real_path.startswith(root_real)
     except:
         return False
@@ -219,6 +222,11 @@ def main():
         else:
             print(f"Warning: Working directory {args.working_dir} does not exist")
             return
+    
+    # Set file browser root path after working directory is established
+    global ROOT_PATH
+    ROOT_PATH = os.getcwd()
+    print(f"File browser root path: {ROOT_PATH}")
     
     # Create metadata directory if specified
     if args.metadata_dir:
@@ -369,8 +377,10 @@ def get_file_content_by_id(file_id: str) -> dict:
 @app.route('/api/files')
 def list_files():
     """List files and directories at given path"""
-    path = request.args.get('path', ROOT_PATH)
-    path = unquote(path) if path else ROOT_PATH
+    global ROOT_PATH
+    current_root = ROOT_PATH or os.getcwd()
+    path = request.args.get('path', current_root)
+    path = unquote(path) if path else current_root
     
     # Security checks
     if not is_safe_path(path) or is_blocked_path(path):
