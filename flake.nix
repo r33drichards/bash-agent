@@ -105,6 +105,7 @@
             langchain-chroma
             langchain-core
             fpdf
+            mcp
         ];
 
         testPythonPackages = ps: with ps; [
