@@ -31,9 +31,16 @@ uploaded_files = {}
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
-template_dir = os.path.join(script_dir, 'templates')
 
-app = Flask(__name__, template_folder=template_dir)
+# Check if we have a React build directory
+react_build_dir = os.path.join(script_dir, 'frontend-dist')
+if os.path.exists(react_build_dir):
+    # Use React build
+    app = Flask(__name__, static_folder=react_build_dir, static_url_path='')
+else:
+    # Fallback to original template directory
+    template_dir = os.path.join(script_dir, 'templates')
+    app = Flask(__name__, template_folder=template_dir)
 app.config['SECRET_KEY'] = os.urandom(24)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
@@ -141,7 +148,12 @@ def main():
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # Serve React app if available, otherwise fall back to template
+    react_build_dir = os.path.join(script_dir, 'frontend-dist')
+    if os.path.exists(react_build_dir):
+        return app.send_static_file('index.html')
+    else:
+        return render_template('index.html')
 
 @app.route('/api/conversation-history')
 def get_conversation_history():
@@ -3024,6 +3036,21 @@ class LLM:
         self.messages.append(assistant_response)
         print(f"DEBUG: Total messages after adding assistant response: {len(self.messages)}")
         return output_text, tool_calls
+
+
+# Catch-all route for React Router (serves index.html for all unmatched routes)
+@app.route('/<path:path>')
+def catch_all(path):
+    # Don't serve index.html for API routes
+    if path.startswith('api/'):
+        return 'API endpoint not found', 404
+    
+    # Serve React app if available
+    react_build_dir = os.path.join(script_dir, 'frontend-dist')
+    if os.path.exists(react_build_dir):
+        return app.send_static_file('index.html')
+    else:
+        return 'Page not found', 404
 
 
 if __name__ == "__main__":

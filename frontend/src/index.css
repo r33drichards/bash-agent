@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar styles */
+@layer utilities {
+  .scrollbar-custom::-webkit-scrollbar {
+    @apply w-2;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    @apply bg-border rounded;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    @apply bg-border-hover;
+  }
+}
+
+/* Animation keyframes */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+@keyframes rolling-update {
+  0% { 
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: translateY(-2px) scale(1.02);
+    opacity: 0.9;
+  }
+  100% { 
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.streaming-cursor {
+  @apply text-primary;
+  animation: blink 1s infinite;
+}
+
+.token-rolling {
+  animation: rolling-update 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Syntax highlighting theme */
+.prose pre {
+  @apply !bg-surface border border-border rounded-lg;
+}
+
+.prose code {
+  @apply !bg-surface !text-danger px-1 py-0.5 rounded text-sm;
+}
+
+.prose pre code {
+  @apply !bg-transparent !text-inherit p-0 rounded-none;
+}
+
+/* React Markdown overrides for dark theme */
+.prose {
+  @apply text-text;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+  @apply text-text-bright;
+}
+
+.prose a {
+  @apply text-primary hover:text-primary-hover;
+}
+
+.prose blockquote {
+  @apply border-l-border text-muted;
+}
+
+.prose table {
+  @apply border border-border;
+}
+
+.prose th,
+.prose td {
+  @apply border border-border;
+}
+
+.prose th {
+  @apply bg-surface;
+}

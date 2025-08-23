@@ -1,0 +1,66 @@
+/* Additional app-specific styles that complement Tailwind */
+
+/* Ensure the root element fills the screen */
+#root {
+  @apply w-full h-full;
+}
+
+/* Custom focus styles for better accessibility */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background;
+}
+
+/* Smooth transitions for interactive elements */
+.smooth-transition {
+  @apply transition-all duration-200 ease-in-out;
+}
+
+/* Custom button styles */
+.btn-primary {
+  @apply bg-secondary hover:bg-secondary/80 text-background px-4 py-2 font-semibold rounded-md smooth-transition focus-ring;
+}
+
+.btn-secondary {
+  @apply bg-border hover:bg-border-hover text-text px-4 py-2 font-semibold rounded-md smooth-transition focus-ring;
+}
+
+.btn-danger {
+  @apply bg-danger hover:bg-danger-hover text-white px-4 py-2 font-semibold rounded-md smooth-transition focus-ring;
+}
+
+/* Loading spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+/* Text selection styles */
+::selection {
+  @apply bg-primary/30;
+}
+
+/* Ensure proper text rendering */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbars on mobile while keeping functionality */
+@media (max-width: 768px) {
+  .scrollbar-custom {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar {
+    display: none;
+  }
+}
