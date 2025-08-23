@@ -125,13 +125,27 @@ BLOCKED_PATTERNS = {
 }
 
 def is_safe_path(path):
-    """Check if path is safe to access"""
+    """Check if path is safe to access - must be within working directory"""
     try:
         global ROOT_PATH
         current_root = ROOT_PATH or os.getcwd()
-        real_path = os.path.realpath(path)
-        root_real = os.path.realpath(current_root)
-        return real_path.startswith(root_real)
+        
+        # Resolve all symbolic links and relative paths
+        real_path = os.path.realpath(os.path.abspath(path))
+        root_real = os.path.realpath(os.path.abspath(current_root))
+        
+        # Ensure path is within the working directory
+        is_within_root = real_path.startswith(root_real)
+        
+        # Additional check: ensure it's not trying to escape via '..' or symlinks
+        if not is_within_root:
+            return False
+            
+        # Prevent access to parent directories of the working directory
+        if real_path == root_real or real_path.startswith(root_real + os.sep):
+            return True
+            
+        return False
     except:
         return False
 
@@ -243,6 +257,8 @@ def main():
     global ROOT_PATH
     ROOT_PATH = os.getcwd()
     print(f"File browser root path: {ROOT_PATH}")
+    print(f"File browser access is restricted to: {ROOT_PATH} and subdirectories only")
+    print(f"Security: Path traversal attacks are blocked by is_safe_path() checks")
     
     # Create metadata directory if specified
     if args.metadata_dir:
