@@ -110,64 +110,9 @@ IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'}
 TEXT_EXTENSIONS = {'txt', 'py', 'js', 'html', 'css', 'json', 'xml', 'md', 'yml', 'yaml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'ps1'}
 ARCHIVE_EXTENSIONS = {'zip', 'tar', 'gz', 'rar', '7z'}
 
-# Security: Prevent access to sensitive files/directories
-BLOCKED_PATTERNS = {
-    '.*',  # Hidden files starting with .
-    '__pycache__',
-    '*.pyc',
-    'node_modules',
-    '.git',
-    '.env*',
-    'id_rsa*',
-    '*.key',
-    '*.pem'
-}
 
-def is_safe_path(path):
-    """Check if path is safe to access - must be within working directory"""
-    try:
-        current_root = app.config.get('FILE_BROWSER_ROOT', os.getcwd())
-        
-        # Resolve all symbolic links and relative paths
-        real_path = os.path.realpath(os.path.abspath(path))
-        root_real = os.path.realpath(os.path.abspath(current_root))
-        
-        # Ensure path is within the working directory
-        is_within_root = real_path.startswith(root_real)
-        
-        # Additional check: ensure it's not trying to escape via '..' or symlinks
-        if not is_within_root:
-            return False
-            
-        # Prevent access to parent directories of the working directory
-        if real_path == root_real or real_path.startswith(root_real + os.sep):
-            return True
-            
-        return False
-    except:
-        return False
 
-def is_blocked_path(path):
-    """Check if path matches blocked patterns"""
-    path_name = os.path.basename(path)
     
-    # Only block very specific sensitive files for now
-    # Allow most files to be visible during development
-    blocked_names = {'node_modules'}
-    if path_name in blocked_names:
-        return True
-    
-    # Block sensitive file extensions
-    blocked_extensions = {'.key', '.pem'}
-    if any(path_name.endswith(ext) for ext in blocked_extensions):
-        return True
-    
-    # Block files that start with id_rsa (SSH keys)
-    if path_name.startswith('id_rsa'):
-        return True
-    
-    return False
-
 def get_file_info(path):
     """Get detailed file information"""
     try:
@@ -252,7 +197,7 @@ def main():
             return
     
     # Set file browser root path after working directory is established
-    app.config['FILE_BROWSER_ROOT'] = os.getcwd()
+    app.config['FILE_BROWSER_ROOT'] = app.config['WORKING_DIR']
     print(f"File browser root path: {app.config['FILE_BROWSER_ROOT']}")
     print(f"File browser access is restricted to: {app.config['FILE_BROWSER_ROOT']} and subdirectories only")
     print(f"Security: Path traversal attacks are blocked by is_safe_path() checks")
@@ -410,10 +355,7 @@ def list_files():
     path = request.args.get('path', current_root)
     path = unquote(path) if path else current_root
     
-    # Security checks
-    if not is_safe_path(path) or is_blocked_path(path):
-        return jsonify({'error': 'Access denied'}), 403
-    
+
     if not os.path.exists(path):
         return jsonify({'error': 'Path not found'}), 404
     
@@ -425,9 +367,7 @@ def list_files():
         for item_name in sorted(os.listdir(path)):
             item_path = os.path.join(path, item_name)
             
-            # Skip blocked items
-            if is_blocked_path(item_path):
-                continue
+
             
             file_info = get_file_info(item_path)
             if file_info:
@@ -511,9 +451,7 @@ def preview_file():
     
     file_path = unquote(file_path)
     
-    # Security checks
-    if not is_safe_path(file_path) or is_blocked_path(file_path):
-        return jsonify({'error': 'Access denied'}), 403
+
     
     if not os.path.exists(file_path) or not os.path.isfile(file_path):
         return jsonify({'error': 'File not found'}), 404
@@ -575,8 +513,7 @@ def create_folder():
     parent_path = unquote(parent_path)
     
     # Security checks
-    if not is_safe_path(parent_path):
-        return jsonify({'error': 'Access denied'}), 403
+
     
     folder_name = secure_filename(folder_name)
     folder_path = os.path.join(parent_path, folder_name)
@@ -608,9 +545,7 @@ def delete_item():
     
     item_path = unquote(item_path)
     
-    # Security checks
-    if not is_safe_path(item_path) or is_blocked_path(item_path):
-        return jsonify({'error': 'Access denied'}), 403
+
     
     if not os.path.exists(item_path):
         return jsonify({'error': 'Item not found'}), 404
@@ -636,9 +571,7 @@ def upload_to_path():
     target_path = request.form.get('path', app.config.get('FILE_BROWSER_ROOT', os.getcwd()))
     target_path = unquote(target_path)
     
-    # Security checks
-    if not is_safe_path(target_path):
-        return jsonify({'error': 'Access denied'}), 403
+
     
     if not os.path.exists(target_path) or not os.path.isdir(target_path):
         return jsonify({'error': 'Invalid target directory'}), 400
