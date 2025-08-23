@@ -138,7 +138,23 @@ def is_safe_path(path):
 def is_blocked_path(path):
     """Check if path matches blocked patterns"""
     path_name = os.path.basename(path)
-    return any(pattern.replace('*', '') in path_name for pattern in BLOCKED_PATTERNS)
+    
+    # Only block very specific sensitive files for now
+    # Allow most files to be visible during development
+    blocked_names = {'node_modules'}
+    if path_name in blocked_names:
+        return True
+    
+    # Block sensitive file extensions
+    blocked_extensions = {'.key', '.pem'}
+    if any(path_name.endswith(ext) for ext in blocked_extensions):
+        return True
+    
+    # Block files that start with id_rsa (SSH keys)
+    if path_name.startswith('id_rsa'):
+        return True
+    
+    return False
 
 def get_file_info(path):
     """Get detailed file information"""
