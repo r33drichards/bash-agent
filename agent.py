@@ -105,8 +105,7 @@ def load_conversation_history():
     return conversations
 
 # File Browser Configuration  
-# Will be set after command line arguments are parsed
-ROOT_PATH = None
+# Will be set in Flask app config after command line arguments are parsed
 IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'}
 TEXT_EXTENSIONS = {'txt', 'py', 'js', 'html', 'css', 'json', 'xml', 'md', 'yml', 'yaml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'ps1'}
 ARCHIVE_EXTENSIONS = {'zip', 'tar', 'gz', 'rar', '7z'}
