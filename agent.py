@@ -126,8 +126,7 @@ BLOCKED_PATTERNS = {
 def is_safe_path(path):
     """Check if path is safe to access - must be within working directory"""
     try:
-        global ROOT_PATH
-        current_root = ROOT_PATH or os.getcwd()
+        current_root = app.config.get('FILE_BROWSER_ROOT', os.getcwd())
         
         # Resolve all symbolic links and relative paths
         real_path = os.path.realpath(os.path.abspath(path))
@@ -253,10 +252,9 @@ def main():
             return
     
     # Set file browser root path after working directory is established
-    global ROOT_PATH
-    ROOT_PATH = os.getcwd()
-    print(f"File browser root path: {ROOT_PATH}")
-    print(f"File browser access is restricted to: {ROOT_PATH} and subdirectories only")
+    app.config['FILE_BROWSER_ROOT'] = os.getcwd()
+    print(f"File browser root path: {app.config['FILE_BROWSER_ROOT']}")
+    print(f"File browser access is restricted to: {app.config['FILE_BROWSER_ROOT']} and subdirectories only")
     print(f"Security: Path traversal attacks are blocked by is_safe_path() checks")
     
     # Create metadata directory if specified
@@ -408,8 +406,7 @@ def get_file_content_by_id(file_id: str) -> dict:
 @app.route('/api/files')
 def list_files():
     """List files and directories at given path"""
-    global ROOT_PATH
-    current_root = ROOT_PATH or os.getcwd()
+    current_root = app.config.get('FILE_BROWSER_ROOT', os.getcwd())
     path = request.args.get('path', current_root)
     path = unquote(path) if path else current_root
     
@@ -444,7 +441,7 @@ def list_files():
         return jsonify({
             'success': True,
             'path': path,
-            'parent': os.path.dirname(path) if path != ROOT_PATH else None,
+            'parent': os.path.dirname(path) if path != app.config.get('FILE_BROWSER_ROOT', os.getcwd()) else None,
             'items': items
         })
     
@@ -569,7 +566,7 @@ def preview_file():
 def create_folder():
     """Create a new folder"""
     data = request.get_json()
-    parent_path = data.get('parent_path', ROOT_PATH)
+    parent_path = data.get('parent_path', app.config.get('FILE_BROWSER_ROOT', os.getcwd()))
     folder_name = data.get('folder_name', '').strip()
     
     if not folder_name:
@@ -619,7 +616,7 @@ def delete_item():
         return jsonify({'error': 'Item not found'}), 404
     
     # Don't allow deletion of root path
-    if os.path.abspath(item_path) == os.path.abspath(ROOT_PATH):
+    if os.path.abspath(item_path) == os.path.abspath(app.config.get('FILE_BROWSER_ROOT', os.getcwd())):
         return jsonify({'error': 'Cannot delete root directory'}), 403
     
     try:
@@ -636,7 +633,7 @@ def delete_item():
 @app.route('/api/upload-to-path', methods=['POST'])
 def upload_to_path():
     """Upload files to a specific directory"""
-    target_path = request.form.get('path', ROOT_PATH)
+    target_path = request.form.get('path', app.config.get('FILE_BROWSER_ROOT', os.getcwd()))
     target_path = unquote(target_path)
     
     # Security checks
