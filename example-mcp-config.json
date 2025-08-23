@@ -1,9 +1,10 @@
 {
   "mcpServers": {
-    "filesystem": {
+    "playwright": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/robertwendt/bash-agent/data"],
-      "env": {}
+      "args": [
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }
