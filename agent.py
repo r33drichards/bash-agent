@@ -40,8 +40,6 @@ from memory import MemoryManager
 from todos import TodoManager
 from github_rag import GitHubRAG
 
-# Store uploaded files temporarily by file ID
-uploaded_files = {}
 
 # Get the directory where this script is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -111,70 +109,10 @@ def load_conversation_history():
     
     return conversations
 
-# File Browser Configuration  
-# Will be set in Flask app config after command line arguments are parsed
-IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'}
-TEXT_EXTENSIONS = {'txt', 'py', 'js', 'html', 'css', 'json', 'xml', 'md', 'yml', 'yaml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'ps1'}
-ARCHIVE_EXTENSIONS = {'zip', 'tar', 'gz', 'rar', '7z'}
 
 
 
     
-def get_file_info(path):
-    """Get detailed file information"""
-    try:
-        stat = os.stat(path)
-        return {
-            'name': os.path.basename(path),
-            'path': path,
-            'size': stat.st_size,
-            'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            'is_dir': os.path.isdir(path),
-            'is_file': os.path.isfile(path),
-            'extension': Path(path).suffix.lower().lstrip('.'),
-            'mime_type': mimetypes.guess_type(path)[0] or 'application/octet-stream'
-        }
-    except (OSError, IOError):
-        return None
-
-def format_file_size(size):
-    """Format file size in human readable format"""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size < 1024.0:
-            return f"{size:.1f} {unit}"
-        size /= 1024.0
-    return f"{size:.1f} PB"
-
-def get_file_icon(file_info):
-    """Get appropriate icon for file type"""
-    if file_info['is_dir']:
-        return '📁'
-    
-    ext = file_info['extension']
-    if ext in IMAGE_EXTENSIONS:
-        return '🖼️'
-    elif ext in ['py']:
-        return '🐍'
-    elif ext in ['js', 'ts']:
-        return '📄'
-    elif ext in ['html', 'htm']:
-        return '🌐'
-    elif ext in ['css', 'scss', 'sass']:
-        return '🎨'
-    elif ext in ['json', 'yaml', 'yml', 'xml']:
-        return '⚙️'
-    elif ext in ['txt', 'md', 'rst']:
-        return '📝'
-    elif ext in ARCHIVE_EXTENSIONS:
-        return '📦'
-    elif ext in ['pdf']:
-        return '📄'
-    elif ext in ['mp3', 'wav', 'flac', 'ogg']:
-        return '🎵'
-    elif ext in ['mp4', 'avi', 'mov', 'mkv']:
-        return '🎬'
-    else:
-        return '📄'
 
 def main():
     parser = argparse.ArgumentParser(description='LLM Agent Web Server')
@@ -189,20 +127,25 @@ def main():
     parser.add_argument('--mcp', type=str, default=None, help='Path to MCP configuration JSON file')
     args = parser.parse_args()
     
+    # Store the original working directory BEFORE any changes
+    original_cwd = os.getcwd()
+    
+    # Convert MCP config to absolute path using original working directory
+    mcp_config_path = None
+    if args.mcp:
+        if os.path.isabs(args.mcp):
+            mcp_config_path = args.mcp
+        else:
+            # Use original working directory for relative path resolution
+            mcp_config_path = os.path.join(original_cwd, args.mcp)
+        print(f"MCP config converted to absolute path: {mcp_config_path}")
+    
     # Store global config
     app.config['AUTO_CONFIRM'] = args.auto_confirm
     app.config['WORKING_DIR'] = args.working_dir
     app.config['METADATA_DIR'] = args.metadata_dir
     app.config['SYSTEM_PROMPT'] = args.system_prompt
-    # Convert MCP config to absolute path if provided
-    if args.mcp:
-        if os.path.isabs(args.mcp):
-            app.config['MCP_CONFIG'] = args.mcp
-        else:
-            app.config['MCP_CONFIG'] = os.path.abspath(args.mcp)
-    else:
-        app.config['MCP_CONFIG'] = None
-    print(f"MCP_CONFIG: {app.config['MCP_CONFIG']}")
+    app.config['MCP_CONFIG'] = mcp_config_path
     
     # Change working directory if specified
     if args.working_dir:
@@ -1051,6 +994,10 @@ async def initialize_mcp_client(session_id):
         if not config_path:
             return
         
+        print(f"DEBUG: About to load MCP config from: {config_path}")
+        print(f"DEBUG: Current working directory: {os.getcwd()}")
+        print(f"DEBUG: Config file exists: {os.path.exists(config_path)}")
+        
         await mcp_client.load_config_and_connect(config_path)
         sessions[session_id]['mcp_initialized'] = True
         
@@ -1263,46 +1210,6 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)]
         )
         return result
-    elif tool_call["name"] == "edit_file_diff":
-        file_path = tool_call["input"]["file_path"]
-        diff = tool_call["input"]["diff"]
-        output_text = apply_unified_diff(file_path, diff)
-        return dict(
-            type="tool_result",
-            tool_use_id=tool_call["id"],
-            content=[dict(type="text", text=output_text)]
-        )
-    elif tool_call["name"] == "overwrite_file":
-        file_path = tool_call["input"]["file_path"]
-        content = tool_call["input"]["content"]
-        output_text = overwrite_file(file_path, content)
-        return dict(
-            type="tool_result",
-            tool_use_id=tool_call["id"],
-            content=[dict(type="text", text=output_text)]
-        )
-    elif tool_call["name"] == "read_file":
-        file_path = tool_call["input"]["file_path"]
-        output_text = read_file(file_path)
-        return dict(
-            type="tool_result",
-            tool_use_id=tool_call["id"],
-            content=[dict(type="text", text=output_text)]
-        )
-    elif tool_call["name"] == "search_files":
-        pattern = tool_call["input"]["pattern"]
-        path = tool_call["input"]["path"]
-        file_extensions = tool_call["input"].get("file_extensions")
-        ignore_dirs = tool_call["input"].get("ignore_dirs")
-        case_sensitive = tool_call["input"].get("case_sensitive", False)
-        regex = tool_call["input"].get("regex", False)
-        max_results = tool_call["input"].get("max_results", 100)
-        output_text = search_files(pattern, path, file_extensions, ignore_dirs, case_sensitive, regex, max_results)
-        return dict(
-            type="tool_result",
-            tool_use_id=tool_call["id"],
-            content=[dict(type="text", text=output_text)]
-        )
     elif tool_call["name"] == "save_memory":
         title = tool_call["input"]["title"]
         content = tool_call["input"]["content"]
@@ -1530,131 +1437,6 @@ ipython_tool = {
 }
 
 # --- Edit File tool definitions ---
-edit_file_diff_tool = {
-    "name": "edit_file_diff",
-    "description": """Apply a unified diff patch to a file with robust error handling and validation.
-
-SUPPORTED FORMATS:
-- Standard unified diff format (git diff output)
-- Traditional diff -u format  
-- Both git-style (a/, b/ prefixes) and traditional formats
-
-KEY FEATURES:
-- Built-in parser with detailed error messages
-- Fallback to external python-patch library if available
-- Validates patch format before applying
-- Handles new file creation and existing file modification
-- Fuzzy matching for minor whitespace differences
-- Comprehensive error reporting with line numbers
-
-USAGE GUIDELINES:
-- Use for precise line-by-line edits with context
-- Ideal when you have exact diff output from git or diff tools
-- Ensure patch context matches the current file state
-- For large changes, consider using overwrite_file instead
-- Always include sufficient context lines (3+ recommended)
-
-EXAMPLE DIFF FORMAT:
-```
---- a/file.py
-+++ b/file.py
-@@ -1,3 +1,4 @@
- def example():
-+    print("new line")
-     return True
-```""",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the file to edit. File will be created if it doesn't exist."
-            },
-            "diff": {
-                "type": "string",
-                "description": "Unified diff string in standard format. Must include @@ hunk headers and proper line prefixes (space, +, -)."
-            }
-        },
-        "required": ["file_path", "diff"]
-    }
-}
-
-overwrite_file_tool = {
-    "name": "overwrite_file",
-    "description": "Overwrite a file with new content. The input should include the file path and the new content as a string.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the file to overwrite."
-            },
-            "content": {
-                "type": "string",
-                "description": "The new content to write to the file."
-            }
-        },
-        "required": ["file_path", "content"]
-    }
-}
-
-read_file_tool = {
-    "name": "read_file",
-    "description": "Read the contents of a file with line numbers for easy reference by LLM. Useful for viewing and analyzing code or text files.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the file to read."
-            }
-        },
-        "required": ["file_path"]
-    }
-}
-
-search_files_tool = {
-    "name": "search_files",
-    "description": "Search for text patterns across files with line numbers for easy reference. Can search individual files or recursively across directories. Supports regex patterns and various file filters.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "pattern": {
-                "type": "string",
-                "description": "Text pattern or regex to search for"
-            },
-            "path": {
-                "type": "string",
-                "description": "File path or directory to search in. If a directory, searches recursively."
-            },
-            "file_extensions": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Optional list of file extensions to include (e.g., ['py', 'js', 'txt']). If not specified, searches all text files."
-            },
-            "ignore_dirs": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Optional list of directories to ignore (e.g., ['node_modules', '.git', '__pycache__'])"
-            },
-            "case_sensitive": {
-                "type": "boolean",
-                "description": "Whether search should be case sensitive (default: false)"
-            },
-            "regex": {
-                "type": "boolean",
-                "description": "Whether pattern should be treated as regex (default: false)"
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Maximum number of matches to return (default: 100)"
-            }
-        },
-        "required": ["pattern", "path"]
-    }
-}
-
-
 # Memory tool definitions
 save_memory_tool = {
     "name": "save_memory",
@@ -2247,355 +2029,92 @@ def execute_ipython(code, print_result=False):
     except Exception as e:
         return f"Error executing Python code: {str(e)}", []
 
-def apply_unified_diff(file_path, diff):
-    """Apply a unified diff to a file with robust parsing and error handling. Returns a result string."""
+# File Browser Configuration for Flask routes
+IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'}
+TEXT_EXTENSIONS = {'txt', 'py', 'js', 'html', 'css', 'json', 'xml', 'md', 'yml', 'yaml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'ps1'}
+ARCHIVE_EXTENSIONS = {'zip', 'tar', 'gz', 'rar', '7z'}
+
+# Store uploaded files temporarily by file ID  
+uploaded_files = {}
+
+def get_file_info(path):
+    """Get detailed file information"""
     try:
-        # Validate patch format first
-        validation_error = _validate_patch_format(diff)
-        if validation_error:
-            return f"Invalid patch format: {validation_error}"
-        
-        # Try built-in implementation first
-        try:
-            return _apply_patch_builtin(file_path, diff)
-        except Exception as builtin_error:
-            # Fall back to external library if available
-            try:
-                return _apply_patch_external(file_path, diff)
-            except ImportError:
-                return f"Patch application failed: {str(builtin_error)}. Consider installing python-patch library: pip install patch"
-            except Exception as external_error:
-                return f"Both built-in and external patch methods failed. Built-in error: {str(builtin_error)}. External error: {str(external_error)}"
-                
-    except Exception as e:
-        return f"Error applying diff: {str(e)}"
+        stat = os.stat(path)
+        return {
+            'name': os.path.basename(path),
+            'path': path,
+            'size': stat.st_size,
+            'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            'is_dir': os.path.isdir(path),
+            'is_file': os.path.isfile(path),
+            'extension': Path(path).suffix.lower().lstrip('.'),
+            'mime_type': mimetypes.guess_type(path)[0] or 'application/octet-stream'
+        }
+    except (OSError, IOError):
+        return None
 
-def _validate_patch_format(diff):
-    """Validate unified diff format and return error message if invalid."""
-    import re
-    
-    if not diff.strip():
-        return "Empty patch content"
-    
-    lines = diff.split('\n')
-    hunk_count = 0
-    
-    for i, line in enumerate(lines):
-        # Check for hunk headers
-        if line.startswith('@@'):
-            if not re.match(r'^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@', line):
-                return f"Invalid hunk header format at line {i+1}: {line}"
-            hunk_count += 1
-        # Check line prefixes in hunks
-        elif hunk_count > 0 and line and line[0] not in ' +-\\':
-            return f"Invalid line prefix at line {i+1}: '{line[0]}' (expected ' ', '+', '-', or '\\')"
-    
-    if hunk_count == 0:
-        return "No valid hunks found in patch"
-    
-    return None
+def format_file_size(size):
+    """Format file size in human readable format"""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024.0:
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} PB"
 
-def _apply_patch_builtin(file_path, diff):
-    """Built-in patch application with detailed error handling."""
-    # Parse the patch
-    hunks = _parse_unified_diff(diff)
-    if not hunks:
-        raise Exception("No valid hunks parsed from diff")
+def get_file_icon(file_info):
+    """Get appropriate icon for file type"""
+    if file_info['is_dir']:
+        return '📁'
     
-    # Read the original file
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                original_lines = f.readlines()
-        else:
-            # Handle new file creation
-            original_lines = []
-    except Exception as e:
-        raise Exception(f"Failed to read file {file_path}: {str(e)}")
-    
-    # Apply each hunk
-    modified_lines = original_lines[:]
-    line_offset = 0  # Track line number changes from previous hunks
-    
-    for hunk in hunks:
-        try:
-            modified_lines, new_offset = _apply_hunk(modified_lines, hunk, line_offset)
-            line_offset += new_offset
-        except Exception as e:
-            raise Exception(f"Failed to apply hunk at line {hunk['old_start']}: {str(e)}")
-    
-    # Write the modified file
-    try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.writelines(modified_lines)
-        return f"Successfully applied patch to {file_path} ({len(hunks)} hunk(s))"
-    except Exception as e:
-        raise Exception(f"Failed to write modified file: {str(e)}")
-
-def _parse_unified_diff(diff):
-    """Parse unified diff into structured hunks."""
-    import re
-    
-    lines = diff.split('\n')
-    hunks = []
-    current_hunk = None
-    
-    for line in lines:
-        if line.startswith('@@'):
-            # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
-            match = re.match(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
-            if match:
-                if current_hunk:
-                    hunks.append(current_hunk)
-                
-                old_start = int(match.group(1))
-                old_count = int(match.group(2)) if match.group(2) else 1
-                new_start = int(match.group(3)) 
-                new_count = int(match.group(4)) if match.group(4) else 1
-                
-                current_hunk = {
-                    'old_start': old_start,
-                    'old_count': old_count,
-                    'new_start': new_start,
-                    'new_count': new_count,
-                    'lines': []
-                }
-        elif current_hunk is not None:
-            # Add lines to current hunk
-            if line.startswith(' ') or line.startswith('+') or line.startswith('-'):
-                current_hunk['lines'].append(line)
-            elif line.startswith('\\'):
-                # Handle "No newline at end of file"
-                current_hunk['lines'].append(line)
-    
-    if current_hunk:
-        hunks.append(current_hunk)
-    
-    return hunks
-
-def _apply_hunk(lines, hunk, line_offset):
-    """Apply a single hunk to the file lines."""
-    # Adjust for 0-based indexing and previous hunks
-    start_line = hunk['old_start'] - 1 + line_offset
-    
-    # Extract old and new content from hunk
-    old_lines = []
-    new_lines = []
-    
-    for line in hunk['lines']:
-        if line.startswith(' '):
-            # Context line
-            old_lines.append(line[1:] + '\n')
-            new_lines.append(line[1:] + '\n')
-        elif line.startswith('-'):
-            # Removed line
-            old_lines.append(line[1:] + '\n')
-        elif line.startswith('+'):
-            # Added line
-            new_lines.append(line[1:] + '\n')
-        elif line.startswith('\\'):
-            # Handle "No newline at end of file"
-            if old_lines and old_lines[-1].endswith('\n'):
-                old_lines[-1] = old_lines[-1][:-1]
-            if new_lines and new_lines[-1].endswith('\n'):
-                new_lines[-1] = new_lines[-1][:-1]
-    
-    # Validate that old content matches
-    end_line = start_line + len(old_lines)
-    if end_line > len(lines):
-        raise Exception(f"Hunk extends beyond file (line {end_line} > {len(lines)})")
-    
-    actual_old = lines[start_line:end_line]
-    if actual_old != old_lines:
-        # Try fuzzy matching for minor whitespace differences
-        if len(actual_old) == len(old_lines):
-            for i, (actual, expected) in enumerate(zip(actual_old, old_lines)):
-                if actual.strip() != expected.strip():
-                    raise Exception(f"Content mismatch at line {start_line + i + 1}. Expected: {repr(expected.strip())}, Got: {repr(actual.strip())}")
-        else:
-            raise Exception(f"Line count mismatch. Expected {len(old_lines)} lines, got {len(actual_old)}")
-    
-    # Apply the change
-    lines[start_line:end_line] = new_lines
-    
-    # Return modified lines and the offset change for subsequent hunks
-    offset_change = len(new_lines) - len(old_lines)
-    return lines, offset_change
-
-def _apply_patch_external(file_path, diff):
-    """Apply patch using external python-patch library as fallback."""
-    import patch
-    
-    try:
-        # Write the diff to a temporary file
-        with tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8', suffix='.patch') as tmp_patch:
-            tmp_patch.write(diff)
-            patch_path = tmp_patch.name
-        
-        # Apply the patch
-        pset = patch.fromfile(patch_path)
-        if not pset:
-            os.unlink(patch_path)
-            raise Exception("Failed to parse patch file with external library")
-        
-        result = pset.apply()
-        os.unlink(patch_path)
-        
-        if result:
-            return f"Applied patch to {file_path} using external library"
-        else:
-            raise Exception("External library failed to apply patch")
-            
-    except Exception as e:
-        if 'patch_path' in locals() and os.path.exists(patch_path):
-            os.unlink(patch_path)
-        raise e
-
-def overwrite_file(file_path, content):
-    """Overwrite a file with new content."""
-    try:
-        with open(file_path, 'w') as f:
-            f.write(content)
-        return f"Overwrote {file_path} with new content."
-    except Exception as e:
-        return f"Error overwriting file: {str(e)}"
-
-def read_file(file_path):
-    """Read a file and return its contents with line numbers for LLM reference."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        
-        # Format with line numbers, similar to cat -n but using → for better visibility
-        numbered_lines = []
-        for i, line in enumerate(lines, 1):
-            # Remove trailing newline for formatting, we'll add it back
-            line_content = line.rstrip('\n\r')
-            numbered_lines.append(f"{i:4d}→{line_content}")
-        
-        result = '\n'.join(numbered_lines)
-        return f"Contents of {file_path}:\n{result}"
-    except Exception as e:
-        return f"Error reading file {file_path}: {str(e)}"
-
-def search_files(pattern, path, file_extensions=None, ignore_dirs=None, case_sensitive=False, regex=False, max_results=100):
-    """Search for text patterns across files with line numbers."""
-    import re
-    
-    # Default ignore directories
-    default_ignore_dirs = {'.git', '__pycache__', 'node_modules', '.svn', '.hg', 'venv', 'env', 'build', 'dist', '.tox'}
-    ignore_dirs = set(ignore_dirs or []) | default_ignore_dirs
-    
-    # Prepare pattern
-    if regex:
-        try:
-            pattern_obj = re.compile(pattern, re.IGNORECASE if not case_sensitive else 0)
-        except re.error as e:
-            return f"Error: Invalid regex pattern '{pattern}': {str(e)}"
+    ext = file_info['extension']
+    if ext in IMAGE_EXTENSIONS:
+        return '🖼️'
+    elif ext in ['py']:
+        return '🐍'
+    elif ext in ['js', 'ts']:
+        return '📄'
+    elif ext in ['html', 'htm']:
+        return '🌐'
+    elif ext in ['css', 'scss', 'sass']:
+        return '🎨'
+    elif ext in ['json', 'yaml', 'yml', 'xml']:
+        return '⚙️'
+    elif ext in ['txt', 'md', 'rst']:
+        return '📝'
+    elif ext in ARCHIVE_EXTENSIONS:
+        return '📦'
+    elif ext in ['pdf']:
+        return '📄'
+    elif ext in ['mp3', 'wav', 'flac', 'ogg']:
+        return '🎵'
+    elif ext in ['mp4', 'avi', 'mov', 'mkv']:
+        return '🎬'
     else:
-        # Escape special regex characters for literal search
-        escaped_pattern = re.escape(pattern)
-        pattern_obj = re.compile(escaped_pattern, re.IGNORECASE if not case_sensitive else 0)
-    
-    matches = []
-    files_searched = 0
-    
-    def should_include_file(filepath):
-        """Check if file should be included based on extensions."""
-        if not file_extensions:
-            return True
-        file_ext = os.path.splitext(filepath)[1].lstrip('.')
-        return file_ext in file_extensions
-    
-    def is_text_file(filepath):
-        """Basic check if file is likely a text file."""
-        try:
-            with open(filepath, 'rb') as f:
-                chunk = f.read(1024)
-                return b'\x00' not in chunk  # Binary files often contain null bytes
-        except:
-            return False
-    
-    def search_file(filepath):
-        """Search within a single file."""
-        nonlocal files_searched
-        try:
-            if not should_include_file(filepath) or not is_text_file(filepath):
-                return []
-            
-            files_searched += 1
-            file_matches = []
-            
-            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                for line_num, line in enumerate(f, 1):
-                    line_content = line.rstrip('\n\r')
-                    if pattern_obj.search(line_content):
-                        file_matches.append({
-                            'file': filepath,
-                            'line_num': line_num,
-                            'line_content': line_content,
-                            'match': pattern_obj.search(line_content).group(0)
-                        })
-                        
-                        if len(matches) + len(file_matches) >= max_results:
-                            break
-            
-            return file_matches
-            
-        except Exception as e:
-            return [{'file': filepath, 'error': str(e)}]
+        return '📄'
+
+def is_safe_path(path):
+    """Check if path is safe (no path traversal)"""
+    if not app.config.get('FILE_BROWSER_ROOT'):
+        return True
     
     try:
-        if os.path.isfile(path):
-            # Search single file
-            matches = search_file(path)
-        elif os.path.isdir(path):
-            # Search directory recursively
-            for root, dirs, files in os.walk(path):
-                # Remove ignored directories from dirs list to prevent walking into them
-                dirs[:] = [d for d in dirs if d not in ignore_dirs]
-                
-                for file in files:
-                    filepath = os.path.join(root, file)
-                    file_matches = search_file(filepath)
-                    matches.extend(file_matches)
-                    
-                    if len(matches) >= max_results:
-                        break
-                
-                if len(matches) >= max_results:
-                    break
-        else:
-            return f"Error: Path '{path}' does not exist"
-        
-        # Format results
-        if not matches:
-            search_type = "file" if os.path.isfile(path) else "directory"
-            return f"No matches found for pattern '{pattern}' in {search_type} '{path}' (searched {files_searched} files)"
-        
-        result_lines = [f"Search results for pattern '{pattern}' in '{path}':"]
-        result_lines.append(f"Found {len(matches)} matches in {files_searched} files searched")
-        result_lines.append("")
-        
-        current_file = None
-        for match in matches[:max_results]:
-            if 'error' in match:
-                result_lines.append(f"Error in {match['file']}: {match['error']}")
-                continue
-                
-            if match['file'] != current_file:
-                current_file = match['file']
-                result_lines.append(f"=== {current_file} ===")
-            
-            result_lines.append(f"{match['line_num']:4d}→{match['line_content']}")
-        
-        if len(matches) >= max_results:
-            result_lines.append(f"\n... (truncated at {max_results} results)")
-        
-        return "\n".join(result_lines)
-        
-    except Exception as e:
-        return f"Error searching files: {str(e)}"
+        abs_path = os.path.abspath(path)
+        root_path = os.path.abspath(app.config['FILE_BROWSER_ROOT'])
+        return abs_path.startswith(root_path)
+    except:
+        return False
+
+def is_blocked_path(path):
+    """Check if path should be blocked from access"""
+    blocked_dirs = {'.git', '__pycache__', 'node_modules', '.svn', '.hg', 'venv', 'env'}
+    path_parts = Path(path).parts
+    return any(part in blocked_dirs for part in path_parts)
+
+
+# NOTE: LLM tool file operations now handled by MCP filesystem tools
+# (read_file, write_file, search_files functions removed - using MCP tools instead)
+
 
 def get_current_memory_manager():
     """Get the memory manager for the current session."""
@@ -3071,6 +2590,8 @@ class MCPClient:
     async def load_config_and_connect(self, config_path: str):
         """Load MCP configuration and connect to servers"""
         try:
+            print(f"DEBUG: MCPClient trying to open config file: {config_path}")
+            print(f"DEBUG: MCPClient current working directory: {os.getcwd()}")
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
@@ -3197,7 +2718,7 @@ class LLM:
         self.total_output_tokens = 0
         self.total_tokens = 0
         self.system_prompt = self._build_system_prompt()
-        self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        self.tools = [bash_tool, sqlite_tool, ipython_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
         
         # Add MCP tools if MCP client is available
         if self.mcp_client and self.mcp_client.is_initialized:
@@ -3207,7 +2728,7 @@ class LLM:
     def _build_system_prompt(self):
         """Build the system prompt dynamically including RAG repository information."""
         base_prompt = (
-            """You are a helpful AI assistant with access to bash, sqlite, Python, and file editing tools.\n"""
+            """You are a helpful AI assistant with access to bash, sqlite, Python, and MCP tools.\n"""
             "You can help the user by executing commands and interpreting the results.\n"
             "Be careful with destructive commands and always explain what you're doing.\n\n"
             
@@ -3215,19 +2736,8 @@ class LLM:
             "- bash: Run shell commands with configurable timeout and streaming\n"
             "- sqlite: Execute SQL queries on SQLite databases\n"
             "- ipython: Execute Python code with rich output support\n"
-            "- edit_file_diff: Apply unified diff patches to files\n"
-            "- overwrite_file: Replace entire file contents\n"
-            "- read_file: Read file contents with line numbers\n"
-            "- search_files: Search for text patterns across files with line numbers (supports regex, file filters, recursive directory search)\n"
             "- Memory tools: save_memory, search_memory, list_memories, get_memory, delete_memory\n"
             "- Todo/Task tools: create_todo, update_todo, list_todos, get_kanban_board, search_todos, get_todo, delete_todo, get_todo_stats\n\n"
-            
-            "FILE EDITING GUIDELINES:\n"
-            "- Use edit_file_diff for precise, contextual changes with unified diff format\n"
-            "- Use overwrite_file for complete file replacement or new file creation\n"
-            "- The edit_file_diff tool has robust error handling and supports both git-style and traditional diffs\n"
-            "- Always include sufficient context (3+ lines) in patches for reliable application\n"
-            "- For multiple small changes, consider using separate patches or overwrite_file\n\n"
             
             "SQLITE USAGE:\n"
             "For large SELECT queries, you can specify an 'output_json' file path in the sqlite tool input. If you do, write the full result to that file and only print errors or the first record in the response.\n"
