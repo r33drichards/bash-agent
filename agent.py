@@ -607,15 +607,11 @@ def handle_connect(auth=None):
     join_room(session_id)
     session['session_id'] = session_id
     
-    # Initialize MCP client if configured
-    mcp_client = None
+    # Always initialize MCP client (with default config if none provided)
     mcp_config_path = app.config.get('MCP_CONFIG')
     print(f"DEBUG: MCP_CONFIG in app.config: {mcp_config_path}")
-    if mcp_config_path:
-        print(f"DEBUG: Creating MCP client for config: {mcp_config_path}")
-        mcp_client = MCPClient()
-    else:
-        print("DEBUG: No MCP configuration found in app.config")
+    print(f"DEBUG: Creating MCP client (will use default config if no user config provided)")
+    mcp_client = MCPClient()
     
     # Initialize session first (without LLM)
     sessions[session_id] = {
@@ -631,8 +627,8 @@ def handle_connect(auth=None):
     # Now initialize LLM with the session context available
     sessions[session_id]['llm'] = LLM("claude-3-7-sonnet-latest", session_id, mcp_client)
     
-    # Initialize MCP client immediately if configured
-    if mcp_client and app.config.get('MCP_CONFIG'):
+    # Always initialize MCP client (will use default config if no user config)
+    if mcp_client:
         def run_mcp_init():
             asyncio.run(initialize_mcp_client(session_id))
         
@@ -644,8 +640,7 @@ def handle_connect(auth=None):
     emit('session_started', {'session_id': session_id})
     emit('message', {
         'type': 'system',
-        'content': 'Connected to Claude Code Agent. Type your message to start...' + 
-                  (' Initializing MCP servers...' if mcp_client else ''),
+        'content': 'Connected to Claude Code Agent. Type your message to start... Initializing MCP servers...',
         'timestamp': datetime.now().isoformat()
     })
     
@@ -991,12 +986,15 @@ async def initialize_mcp_client(session_id):
             return
         
         config_path = app.config.get('MCP_CONFIG')
-        if not config_path:
-            return
+        # Always try to load config - load_config_and_connect handles None gracefully
+        # and will load the default config if no user config is provided
         
-        print(f"DEBUG: About to load MCP config from: {config_path}")
-        print(f"DEBUG: Current working directory: {os.getcwd()}")
-        print(f"DEBUG: Config file exists: {os.path.exists(config_path)}")
+        if config_path:
+            print(f"DEBUG: About to load MCP config from: {config_path}")
+            print(f"DEBUG: Current working directory: {os.getcwd()}")
+            print(f"DEBUG: Config file exists: {os.path.exists(config_path)}")
+        else:
+            print("DEBUG: No user MCP config provided, will load default config")
         
         await mcp_client.load_config_and_connect(config_path)
         sessions[session_id]['mcp_initialized'] = True
@@ -2592,12 +2590,38 @@ class MCPClient:
         try:
             print(f"DEBUG: MCPClient trying to open config file: {config_path}")
             print(f"DEBUG: MCPClient current working directory: {os.getcwd()}")
-            with open(config_path, 'r') as f:
-                config = json.load(f)
             
-            if 'mcpServers' not in config:
-                print("Warning: No mcpServers found in MCP config")
+            # Hard-coded default config to ensure filesystem server is always available
+            example_config = {
+                "mcpServers": {
+                    "filesystem": {
+                        "command": "npx",
+                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/robertwendt/bash-agent/data"],
+                        "env": {}
+                    }
+                }
+            }
+            print(f"DEBUG: Using hard-coded default config with {len(example_config.get('mcpServers', {}))} servers")
+            
+            # Load user config
+            user_config = {}
+            if config_path and os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    user_config = json.load(f)
+                print(f"DEBUG: Loaded user config with {len(user_config.get('mcpServers', {}))} servers")
+            
+            # Merge configs: example config first, then user config (user overrides example)
+            merged_servers = {}
+            merged_servers.update(example_config.get('mcpServers', {}))
+            merged_servers.update(user_config.get('mcpServers', {}))
+            
+            config = {'mcpServers': merged_servers}
+            
+            if not merged_servers:
+                print("Warning: No mcpServers found in merged MCP config")
                 return
+            
+            print(f"DEBUG: Merged config has {len(merged_servers)} servers: {list(merged_servers.keys())}")
             
             for server_name, server_config in config['mcpServers'].items():
                 await self.connect_to_server(server_name, server_config)
