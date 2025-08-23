@@ -1521,23 +1521,41 @@
         
         async function loadDirectory(path = '') {
             try {
-                const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+                console.log('Loading directory:', path);
+                const url = `/api/files?path=${encodeURIComponent(path)}`;
+                console.log('API URL:', url);
+                
+                const response = await fetch(url);
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('API Response:', data);
                 
                 if (data.success) {
                     currentPath = data.path;
                     displayFiles(data.items);
                     updateBreadcrumb(data.path, data.parent);
                 } else {
-                    showError('Failed to load directory: ' + data.error);
+                    showError('Failed to load directory: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
+                console.error('Directory loading error:', error);
                 showError('Network error: ' + error.message);
             }
         }
         
         function displayFiles(items) {
+            console.log('Displaying files:', items);
             fileBrowserList.innerHTML = '';
+            
+            if (!items || items.length === 0) {
+                fileBrowserList.innerHTML = '<div style="padding: 20px; text-align: center; color: #7d8590;">No files found in current directory</div>';
+                return;
+            }
             
             items.forEach(item => {
                 const fileElement = document.createElement('div');
@@ -1773,9 +1791,16 @@
         }
         
         function showError(message) {
-            // You can integrate this with your existing error handling
-            console.error(message);
-            alert(message); // Simple alert for now
+            console.error('File Browser Error:', message);
+            fileBrowserList.innerHTML = `
+                <div style="padding: 20px; color: #f85149; background-color: #161b22; border: 1px solid #f85149; border-radius: 6px; margin: 12px;">
+                    <strong>Error:</strong> ${message}
+                    <br><br>
+                    <button onclick="loadDirectory(currentPath)" style="background: #21262d; color: #e6edf3; border: 1px solid #30363d; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                        Retry
+                    </button>
+                </div>
+            `;
         }
         
         function format_file_size(size) {
