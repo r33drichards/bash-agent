@@ -9,6 +9,9 @@ import time
 import tempfile
 import psutil
 import base64
+import asyncio
+from typing import Optional
+from contextlib import AsyncExitStack
 
 import anthropic
 from anthropic import RateLimitError, APIError
@@ -18,6 +21,10 @@ from IPython.core.interactiveshell import InteractiveShell
 from IPython.utils.capture import capture_output
 import io
 import contextlib
+
+# MCP imports
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 from flask import Flask, render_template, request, jsonify, session, send_file, abort
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -179,6 +186,7 @@ def main():
     parser.add_argument('--metadata-dir', type=str, default=None, help='Directory to store conversation history and metadata')
     # system prompt
     parser.add_argument('--system-prompt', type=str, default=None, help='System prompt to use for the agent')
+    parser.add_argument('--mcp', type=str, default=None, help='Path to MCP configuration JSON file')
     args = parser.parse_args()
     
     # Store global config
@@ -186,6 +194,15 @@ def main():
     app.config['WORKING_DIR'] = args.working_dir
     app.config['METADATA_DIR'] = args.metadata_dir
     app.config['SYSTEM_PROMPT'] = args.system_prompt
+    # Convert MCP config to absolute path if provided
+    if args.mcp:
+        if os.path.isabs(args.mcp):
+            app.config['MCP_CONFIG'] = args.mcp
+        else:
+            app.config['MCP_CONFIG'] = os.path.abspath(args.mcp)
+    else:
+        app.config['MCP_CONFIG'] = None
+    print(f"MCP_CONFIG: {app.config['MCP_CONFIG']}")
     
     # Change working directory if specified
     if args.working_dir:
@@ -213,6 +230,14 @@ def main():
     print(f"\n=== LLM Agent Web Server ===")
     print(f"Starting server on http://{args.host}:{args.port}")
     print(f"Working directory: {os.getcwd()}")
+    if args.mcp:
+        print(f"MCP configuration: {args.mcp}")
+        if os.path.exists(args.mcp):
+            print(f"MCP config file exists: ✓")
+        else:
+            print(f"MCP config file NOT found: ✗")
+    else:
+        print("No MCP configuration specified")
     print("Claude Code-like interface available in your browser")
     
     socketio.run(app, host=args.host, port=args.port, debug=True, allow_unsafe_werkzeug=True)
@@ -639,20 +664,45 @@ def handle_connect(auth=None):
     join_room(session_id)
     session['session_id'] = session_id
     
-    # Initialize session with LLM
+    # Initialize MCP client if configured
+    mcp_client = None
+    mcp_config_path = app.config.get('MCP_CONFIG')
+    print(f"DEBUG: MCP_CONFIG in app.config: {mcp_config_path}")
+    if mcp_config_path:
+        print(f"DEBUG: Creating MCP client for config: {mcp_config_path}")
+        mcp_client = MCPClient()
+    else:
+        print("DEBUG: No MCP configuration found in app.config")
+    
+    # Initialize session first (without LLM)
     sessions[session_id] = {
-        'llm': LLM("claude-3-7-sonnet-latest", session_id),
         'auto_confirm': app.config['AUTO_CONFIRM'],
         'connected_at': datetime.now(),
         'conversation_history': [],
         'memory_manager': MemoryManager(),
-        'todo_manager': TodoManager()
+        'todo_manager': TodoManager(),
+        'mcp_client': mcp_client,
+        'mcp_initialized': False
     }
+    
+    # Now initialize LLM with the session context available
+    sessions[session_id]['llm'] = LLM("claude-3-7-sonnet-latest", session_id, mcp_client)
+    
+    # Initialize MCP client immediately if configured
+    if mcp_client and app.config.get('MCP_CONFIG'):
+        def run_mcp_init():
+            asyncio.run(initialize_mcp_client(session_id))
+        
+        # Run MCP initialization in a separate thread
+        mcp_thread = threading.Thread(target=run_mcp_init, daemon=True)
+        mcp_thread.start()
+        print(f"Starting MCP initialization for session {session_id}")
     
     emit('session_started', {'session_id': session_id})
     emit('message', {
         'type': 'system',
-        'content': 'Connected to Claude Code Agent. Type your message to start...',
+        'content': 'Connected to Claude Code Agent. Type your message to start...' + 
+                  (' Initializing MCP servers...' if mcp_client else ''),
         'timestamp': datetime.now().isoformat()
     })
     
@@ -985,6 +1035,83 @@ def handle_tool_call_web(tool_call, session_id, auto_confirm):
             'tool_call': tool_call
         }, room=session_id)
 
+async def initialize_mcp_client(session_id):
+    """Initialize MCP client for the session"""
+    try:
+        if session_id not in sessions:
+            return
+        
+        session_data = sessions[session_id]
+        mcp_client = session_data.get('mcp_client')
+        
+        if not mcp_client:
+            return
+        
+        config_path = app.config.get('MCP_CONFIG')
+        if not config_path:
+            return
+        
+        await mcp_client.load_config_and_connect(config_path)
+        sessions[session_id]['mcp_initialized'] = True
+        
+        # Update the LLM with MCP tools
+        llm = sessions[session_id]['llm']
+        if mcp_client.is_initialized:
+            mcp_tools = mcp_client.get_tools_for_anthropic()
+            llm.tools.extend(mcp_tools)
+        
+        # Debug output for MCP tools
+        tool_list = [f"{tool['name']} ({tool['server_name']})" for tool in mcp_client.available_tools]
+        print(f"=== MCP INITIALIZATION DEBUG ===")
+        print(f"Servers connected: {list(mcp_client.servers.keys())}")
+        print(f"Available MCP tools: {tool_list}")
+        print(f"================================")
+        
+        socketio.emit('message', {
+            'type': 'system',
+            'content': f'MCP client initialized with {len(mcp_client.servers)} servers and {len(mcp_client.available_tools)} tools: {", ".join([tool["name"] for tool in mcp_client.available_tools])}',
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id)
+        
+    except Exception as e:
+        socketio.emit('message', {
+            'type': 'error',
+            'content': f'Error initializing MCP client: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id)
+
+async def handle_mcp_tool_call(session_id, tool_call):
+    """Handle MCP tool call asynchronously"""
+    try:
+        if session_id not in sessions:
+            return
+        
+        session_data = sessions[session_id]
+        mcp_client = session_data.get('mcp_client')
+        
+        if not mcp_client:
+            return
+        
+        result = await mcp_client.call_tool(tool_call['name'], tool_call['input'])
+        
+        if result.get('error'):
+            content = result['error']
+        else:
+            content = result.get('content', 'No result returned')
+        
+        socketio.emit('tool_result', {
+            'tool_use_id': tool_call['id'],
+            'result': content,
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id)
+        
+    except Exception as e:
+        socketio.emit('tool_result', {
+            'tool_use_id': tool_call['id'],
+            'result': f'Error executing MCP tool: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }, room=session_id)
+
 def execute_tool_call_web(tool_call, session_id):
     """Execute tool call and emit results"""
     try:
@@ -1011,8 +1138,47 @@ def execute_tool_call_web(tool_call, session_id):
         
         emit('tool_execution_start', tool_info, room=session_id)
         
-        # Execute the tool
-        result = execute_tool_call(tool_call)
+        # Check if this is an MCP tool and handle async execution
+        if '_' in tool_call['name'] and session_id in sessions:
+            session_data = sessions[session_id]
+            if session_data.get('mcp_client'):
+                # Initialize MCP client if not done yet
+                if not session_data.get('mcp_initialized'):
+                    result = {
+                        'type': 'tool_result',
+                        'tool_use_id': tool_call['id'],
+                        'content': [{'type': 'text', 'text': 'MCP client is still initializing. Please try again in a moment.'}]
+                    }
+                else:
+                    # MCP client is initialized, try to call the tool asynchronously
+                    try:
+                        def run_mcp_tool():
+                            asyncio.run(handle_mcp_tool_call(session_id, tool_call))
+                        
+                        # Run MCP tool call in a separate thread
+                        mcp_tool_thread = threading.Thread(target=run_mcp_tool, daemon=True)
+                        mcp_tool_thread.start()
+                        
+                        result = {
+                            'type': 'tool_result',
+                            'tool_use_id': tool_call['id'],
+                            'content': [{'type': 'text', 'text': 'MCP tool executed. Results will be emitted separately.'}]
+                        }
+                    except Exception as e:
+                        result = {
+                            'type': 'tool_result',
+                            'tool_use_id': tool_call['id'],
+                            'content': [{'type': 'text', 'text': f'Error executing MCP tool: {str(e)}'}]
+                        }
+            else:
+                result = {
+                    'type': 'tool_result',
+                    'tool_use_id': tool_call['id'],
+                    'content': [{'type': 'text', 'text': 'MCP client not configured'}]
+                }
+        else:
+            # Execute the tool normally
+            result = execute_tool_call(tool_call)
         
         # Extract the result content
         result_content = ""
@@ -1285,7 +1451,12 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)]
         )
     else:
-        raise Exception(f"Unsupported tool: {tool_call['name']}")
+        # Check if this is an MCP tool
+        if '_' in tool_call['name']:  # MCP tools are prefixed with server name
+            # This needs to be handled by the web version since we need async
+            raise Exception(f"MCP tool {tool_call['name']} must be called through web interface")
+        else:
+            raise Exception(f"Unsupported tool: {tool_call['name']}")
 
 
 bash_tool = {
@@ -2887,8 +3058,132 @@ def github_rag_list():
         return f"Error listing repositories: {str(e)}"
 
 
+class MCPClient:
+    """MCP Client for connecting to MCP servers and executing tools"""
+    
+    def __init__(self):
+        self.session: Optional[ClientSession] = None
+        self.exit_stack = AsyncExitStack()
+        self.servers = {}
+        self.available_tools = []
+        self.is_initialized = False
+    
+    async def load_config_and_connect(self, config_path: str):
+        """Load MCP configuration and connect to servers"""
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            if 'mcpServers' not in config:
+                print("Warning: No mcpServers found in MCP config")
+                return
+            
+            for server_name, server_config in config['mcpServers'].items():
+                await self.connect_to_server(server_name, server_config)
+                
+            self.is_initialized = True
+            print(f"MCP initialized with {len(self.servers)} servers")
+            
+        except Exception as e:
+            print(f"Error loading MCP config: {e}")
+    
+    async def connect_to_server(self, server_name: str, server_config: dict):
+        """Connect to a single MCP server"""
+        try:
+            command = server_config.get('command')
+            args = server_config.get('args', [])
+            env = server_config.get('env', {})
+            
+            if not command:
+                print(f"Warning: No command specified for server {server_name}")
+                return
+            
+            server_params = StdioServerParameters(
+                command=command,
+                args=args,
+                env=env
+            )
+            
+            stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+            stdio, write = stdio_transport
+            session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+            
+            await session.initialize()
+            
+            # Get available tools
+            response = await session.list_tools()
+            tools = response.tools
+            
+            self.servers[server_name] = {
+                'session': session,
+                'tools': tools,
+                'config': server_config
+            }
+            
+            # Add tools to available tools list with server prefix
+            for tool in tools:
+                tool_info = {
+                    'name': f"{server_name}_{tool.name}",
+                    'original_name': tool.name,
+                    'server_name': server_name,
+                    'description': tool.description,
+                    'input_schema': tool.inputSchema
+                }
+                self.available_tools.append(tool_info)
+            
+            print(f"Connected to MCP server '{server_name}' with {len(tools)} tools: {[tool.name for tool in tools]}")
+            
+        except Exception as e:
+            print(f"Error connecting to MCP server '{server_name}': {e}")
+    
+    async def call_tool(self, tool_name: str, args: dict) -> dict:
+        """Call a tool on the appropriate MCP server"""
+        try:
+            # Find the tool and server
+            tool_info = None
+            for tool in self.available_tools:
+                if tool['name'] == tool_name:
+                    tool_info = tool
+                    break
+            
+            if not tool_info:
+                return {'error': f'Tool {tool_name} not found'}
+            
+            server_name = tool_info['server_name']
+            original_name = tool_info['original_name']
+            
+            if server_name not in self.servers:
+                return {'error': f'Server {server_name} not connected'}
+            
+            session = self.servers[server_name]['session']
+            result = await session.call_tool(original_name, args)
+            
+            return {
+                'success': True,
+                'content': result.content if hasattr(result, 'content') else str(result)
+            }
+            
+        except Exception as e:
+            return {'error': f'Error calling tool {tool_name}: {str(e)}'}
+    
+    def get_tools_for_anthropic(self) -> list:
+        """Get tools in the format expected by Anthropic API"""
+        anthropic_tools = []
+        for tool in self.available_tools:
+            anthropic_tools.append({
+                'name': tool['name'],
+                'description': tool['description'],
+                'input_schema': tool['input_schema']
+            })
+        return anthropic_tools
+    
+    async def cleanup(self):
+        """Clean up resources"""
+        await self.exit_stack.aclose()
+
+
 class LLM:
-    def __init__(self, model, session_id=None):
+    def __init__(self, model, session_id=None, mcp_client=None):
         if "ANTHROPIC_API_KEY" not in os.environ:
             raise ValueError("ANTHROPIC_API_KEY environment variable not found.")
         self.client = anthropic.Anthropic(
@@ -2896,12 +3191,18 @@ class LLM:
         )
         self.model = model
         self.session_id = session_id
+        self.mcp_client = mcp_client
         self.messages = []
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         self.total_tokens = 0
         self.system_prompt = self._build_system_prompt()
         self.tools = [bash_tool, sqlite_tool, ipython_tool, edit_file_diff_tool, overwrite_file_tool, read_file_tool, search_files_tool, save_memory_tool, search_memory_tool, list_memories_tool, get_memory_tool, delete_memory_tool, create_todo_tool, update_todo_tool, list_todos_tool, get_kanban_board_tool, search_todos_tool, get_todo_tool, delete_todo_tool, get_todo_stats_tool, github_rag_index_tool, github_rag_query_tool, github_rag_list_tool]
+        
+        # Add MCP tools if MCP client is available
+        if self.mcp_client and self.mcp_client.is_initialized:
+            mcp_tools = self.mcp_client.get_tools_for_anthropic()
+            self.tools.extend(mcp_tools)
     
     def _build_system_prompt(self):
         """Build the system prompt dynamically including RAG repository information."""
@@ -2961,7 +3262,26 @@ class LLM:
             "- github_rag_query: Ask questions about indexed repositories with citations\n"
             "- github_rag_list: List all indexed repositories and their collection names\n"
             "When a repository is indexed, it's automatically saved to memory for context. Query results include specific file references and code snippets with citations.\n\n"
+        )
+        
+        # Add MCP tools information if available
+        if self.mcp_client and self.mcp_client.is_initialized:
+            base_prompt += (
+                "MCP TOOLS (MODEL CONTEXT PROTOCOL):\n"
+                f"Connected to {len(self.mcp_client.servers)} MCP servers with {len(self.mcp_client.available_tools)} available tools:\n"
+            )
             
+            # List MCP servers and their tools
+            for server_name, server_info in self.mcp_client.servers.items():
+                tools_list = [tool.name for tool in server_info['tools']]
+                base_prompt += f"- {server_name}: {', '.join(tools_list)}\n"
+            
+            base_prompt += (
+                "MCP tools are prefixed with server name (e.g., servername_toolname). "
+                "Use these tools to extend your capabilities with external services and APIs.\n\n"
+            )
+        
+        base_prompt += (
             "when you are asked to do something, you should first check the memory for relevant information, and if you don't find it, you should use the tools to get the information you need."
             "after searching memory and rag, create a plan and add it to your todos."
             "if you find a problem along the, update your todos to track the problem, but make sure you stay on the overall goal."
