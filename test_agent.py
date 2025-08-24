@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import Mock, patch
-from agent import LLM
+from agent.llm import LLM
 
 
 class TestLLMValidation:

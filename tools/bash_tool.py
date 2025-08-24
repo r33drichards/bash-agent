@@ -138,14 +138,18 @@ def execute_bash_streaming(command, timeout=30):
 def emit_streaming_output(data, stream_type):
     """Emit streaming output to the web client if available."""
     try:
-        from flask import session as flask_session
-        from flask_socketio import emit
-        session_id = flask_session.get('session_id')
-        if session_id:
-            emit('streaming_output', {
-                'data': data,
-                'stream_type': stream_type,
-                'timestamp': datetime.now().isoformat()
-            }, room=session_id)
-    except:
-        pass  # Ignore if not in web context
+        from agent.github_utils import emit_streaming_output as emit_stream
+        emit_stream(data, stream_type)
+    except ImportError:
+        try:
+            from flask import session as flask_session
+            from flask_socketio import emit
+            session_id = flask_session.get('session_id')
+            if session_id:
+                emit('streaming_output', {
+                    'data': data,
+                    'stream_type': stream_type,
+                    'timestamp': datetime.now().isoformat()
+                }, room=session_id)
+        except:
+            pass  # Ignore if not in web context

@@ -1,0 +1,2 @@
+# Global sessions store
+sessions = {}

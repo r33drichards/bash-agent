@@ -3,48 +3,29 @@ import os
 def get_current_session_id():
     """Get the current session ID from Flask session context"""
     try:
-        from flask import session as flask_session
-        return flask_session.get('session_id')
+        from agent.github_utils import get_current_session_id as get_session_id
+        return get_session_id()
     except ImportError:
         return None
 
 def get_current_github_rag():
     """Get the current session's GitHub RAG instance."""
     try:
-        from flask import session as flask_session
-        from github_rag import GitHubRAG
-        from agent import sessions
-        session_id = flask_session.get('session_id')
-        if session_id and session_id in sessions:
-            if 'github_rag' not in sessions[session_id]:
-                # Initialize GitHub RAG with OpenAI API key
-                openai_api_key = os.environ.get("OPENAI_API_KEY")
-                if not openai_api_key:
-                    raise ValueError("OPENAI_API_KEY environment variable not found")
-                sessions[session_id]['github_rag'] = GitHubRAG(openai_api_key)
-            return sessions[session_id]['github_rag']
-        else:
-            raise Exception("No active session found")
-    except ImportError:
+        from agent.github_utils import get_current_github_rag as get_github_rag
+        return get_github_rag()
+    except Exception as e:
         # Fallback when not in Flask context
         from github_rag import GitHubRAG
         openai_api_key = os.environ.get("OPENAI_API_KEY")
         if not openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable not found")
         return GitHubRAG(openai_api_key)
-    except Exception as e:
-        raise Exception(f"Could not get GitHub RAG instance: {str(e)}")
 
 def get_current_memory_manager():
     """Get the memory manager for the current session."""
     try:
-        from flask import session as flask_session
-        from memory import MemoryManager
-        from agent import sessions
-        session_id = flask_session.get('session_id')
-        if session_id and session_id in sessions:
-            return sessions[session_id]['memory_manager']
-        return MemoryManager()  # Fallback to default
+        from agent.github_utils import get_current_memory_manager as get_memory_manager
+        return get_memory_manager()
     except ImportError:
         # Fallback when not in Flask context
         from memory import MemoryManager
@@ -113,7 +94,7 @@ def github_rag_index(repo_url, include_extensions=None, ignore_dirs=None):
             try:
                 session_id = get_current_session_id()
                 if session_id:
-                    from agent import sessions
+                    from agent.session_manager import sessions
                     if session_id in sessions:
                         llm = sessions[session_id]['llm']
                         llm.refresh_system_prompt()

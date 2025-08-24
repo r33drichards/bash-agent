@@ -42,10 +42,10 @@
           installPhase = ''
             mkdir -p $out/bin
             cp -r $src/* $out/bin/
-            chmod +x $out/bin/agent.py
+            chmod +x $out/bin/main.py
           '';
           meta = {
-            mainProgram = "agent.py";
+            mainProgram = "main.py";
           };
         };
 

@@ -1,14 +1,8 @@
 def get_current_todo_manager():
     """Get the todo manager for the current session."""
     try:
-        from flask import session as flask_session
-        from todos import TodoManager
-        session_id = flask_session.get('session_id')
-        # This will need to be imported from the main module
-        from agent import sessions
-        if session_id and session_id in sessions:
-            return sessions[session_id]['todo_manager']
-        return TodoManager()  # Fallback to default
+        from agent.github_utils import get_current_todo_manager as get_todo_manager
+        return get_todo_manager()
     except ImportError:
         # Fallback when not in Flask context
         from todos import TodoManager
