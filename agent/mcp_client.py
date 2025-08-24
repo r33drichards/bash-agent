@@ -24,7 +24,7 @@ class MCPClient:
         self.available_tools = []
         self.is_initialized = False
 
-    async def load_config_and_connect(self, config_path: str):
+    async def load_config_and_connect(self, config_path: str, working_dir: str = None):
         """Load MCP configuration and connect to servers"""
         try:
             from mcp import StdioServerParameters
@@ -36,12 +36,15 @@ class MCPClient:
             print(f"DEBUG: MCPClient trying to open config file: {config_path}")
             print(f"DEBUG: MCPClient current working directory: {os.getcwd()}")
 
+            # Use provided working_dir or fallback to current directory
+            filesystem_dir = working_dir or os.getcwd()
+
             # Hard-coded default config to ensure filesystem server is always available
             example_config = {
                 "mcpServers": {
                     "filesystem": {
                         "command": "mcp-server-filesystem",
-                        "args": [current_app.config.get("WORKING_DIR")],
+                        "args": [filesystem_dir],
                     },
                     "playwright": {"command": "mcp-server-playwright"},
                     "sequentialthinking": {"command": "mcp-server-sequential-thinking"},
@@ -193,7 +196,7 @@ class MCPClient:
         await self.exit_stack.aclose()
 
 
-async def initialize_mcp_client(session_id):
+async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None, working_dir=None):
     """Initialize MCP client for the session"""
     try:
         if session_id not in sessions:
@@ -205,7 +208,7 @@ async def initialize_mcp_client(session_id):
         if not mcp_client:
             return
 
-        config_path = current_app.config.get("MCP_CONFIG")
+        config_path = mcp_config_path
         # Always try to load config - load_config_and_connect handles None gracefully
         # and will load the default config if no user config is provided
 
@@ -216,7 +219,7 @@ async def initialize_mcp_client(session_id):
         else:
             print("DEBUG: No user MCP config provided, will load default config")
 
-        await mcp_client.load_config_and_connect(config_path)
+        await mcp_client.load_config_and_connect(config_path, working_dir)
         sessions[session_id]["mcp_initialized"] = True
 
         # Update the LLM with MCP tools
@@ -235,30 +238,28 @@ async def initialize_mcp_client(session_id):
         print(f"Available MCP tools: {tool_list}")
         print(f"================================")
 
-        from flask_socketio import SocketIO
-        socketio = SocketIO()
-        socketio.emit(
-            "message",
-            {
-                "type": "system",
-                "content": f"MCP client initialized with {len(mcp_client.servers)} servers and {len(mcp_client.available_tools)} tools: {', '.join([tool['name'] for tool in mcp_client.available_tools])}",
-                "timestamp": datetime.now().isoformat(),
-            },
-            room=session_id,
-        )
+        if socketio:
+            socketio.emit(
+                "message",
+                {
+                    "type": "system",
+                    "content": f"MCP client initialized with {len(mcp_client.servers)} servers and {len(mcp_client.available_tools)} tools: {', '.join([tool['name'] for tool in mcp_client.available_tools])}",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                room=session_id,
+            )
 
     except Exception as e:
-        from flask_socketio import SocketIO
-        socketio = SocketIO()
-        socketio.emit(
-            "message",
-            {
-                "type": "error",
-                "content": f"Error initializing MCP client: {str(e)}",
-                "timestamp": datetime.now().isoformat(),
-            },
-            room=session_id,
-        )
+        if socketio:
+            socketio.emit(
+                "message",
+                {
+                    "type": "error",
+                    "content": f"Error initializing MCP client: {str(e)}",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                room=session_id,
+            )
 
 
 async def handle_mcp_tool_call(session_id, tool_call):

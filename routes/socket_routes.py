@@ -51,9 +51,10 @@ def register_socket_events(socketio, app):
 
         # Always initialize MCP client (will use default config if no user config)
         if mcp_client:
+            working_dir = app.config.get("WORKING_DIR")
 
             def run_mcp_init():
-                asyncio.run(initialize_mcp_client(session_id))
+                asyncio.run(initialize_mcp_client(session_id, mcp_config_path, socketio, working_dir))
 
             # Run MCP initialization in a separate thread
             mcp_thread = threading.Thread(target=run_mcp_init, daemon=True)
