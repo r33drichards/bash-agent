@@ -12,8 +12,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - flake: bashAgentDocker
-            flake_image: bash-agent
           - flake: webAgentDocker
             flake_image: webagent
 

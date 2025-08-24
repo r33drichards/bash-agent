@@ -6,46 +6,22 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.nix-mcp-servers.url = "github:cameronfyfe/nix-mcp-servers";
 
-
-  outputs = { self, nixpkgs, flake-utils, ... }@inputs:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      ...
+    }@inputs:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
+        lib = pkgs.lib;
 
-        devshell = pkgs.callPackage ./shell.nix { inherit pkgs; inputs = inputs; };
-
-        # Create a proper derivation that includes all files
-        agentPackage = pkgs.stdenv.mkDerivation {
-          name = "bash-agent";
-          src = ./.;
-          buildInputs = [ pythonEnv ];
-          installPhase = ''
-            mkdir -p $out/bin $out/share/bash-agent
-            cp -r . $out/share/bash-agent/
-            cat > $out/bin/agent << EOF
-            #!${pkgs.bash}/bin/bash
-            cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py "\$@"
-            EOF
-            chmod +x $out/bin/agent
-          '';
-        };
-
-        # Create a proper derivation for bash-agent (legacy)
-        bashAgentPackage = pkgs.stdenv.mkDerivation {
-          name = "bash-agent-legacy";
-          src = ./.;
-          buildInputs = [ pythonEnv ];
-          installPhase = ''
-            mkdir -p $out/bin $out/share/bash-agent
-            cp -r . $out/share/bash-agent/
-            cat > $out/bin/bash-agent << EOF
-            #!${pkgs.bash}/bin/bash
-            cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/bash-agent.py "\$@"
-            EOF
-            chmod +x $out/bin/bash-agent
-          '';
+        devshell = pkgs.callPackage ./shell.nix {
+          inherit pkgs;
+          inputs = inputs;
         };
 
         # Create a proper derivation for webagent (new)
@@ -53,7 +29,13 @@
           name = "web-agent";
           src = ./.;
           nativeBuildInputs = [ pythonEnv ];
-          buildInputs = [ pythonEnv ];
+          buildInputs = [
+            pythonEnv
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
+
+          ];
           checkPhase = ''
             runHook preCheck
             echo "Running tests..."
@@ -67,6 +49,11 @@
             cp -r . $out/share/bash-agent/
             cat > $out/bin/webagent << EOF
             #!${pkgs.bash}/bin/bash
+            export PATH=$PATH:${lib.makeBinPath [
+              inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
+              inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
+              inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
+            ]}
             cd $out/share/bash-agent
             exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py "\$@"
             EOF
@@ -74,11 +61,11 @@
           '';
         };
 
-        agentScript = agentPackage;
-        bashAgentScript = bashAgentPackage;
+
         webAgentScript = webAgentPackage;
 
-        pythonPackages = ps: with ps; [
+        pythonPackages =
+          ps: with ps; [
             anthropic
             tenacity
             matplotlib
@@ -108,11 +95,15 @@
             langchain-core
             fpdf
             mcp
-        ];
+          ];
 
-        testPythonPackages = ps: with ps; [
-          pytest
-        ] ++ pythonPackages ps;
+        testPythonPackages =
+          ps:
+          with ps;
+          [
+            pytest
+          ]
+          ++ pythonPackages ps;
 
         pythonEnv = pkgs.python3.withPackages pythonPackages;
 
@@ -125,12 +116,7 @@
           exec ${pythonEnv}/bin/python3 ${agentPackage}/share/bash-agent/agent.py "$@"
         '';
 
-        # Bash agent entrypoint (legacy)
-        bashAgentEntrypoint = pkgs.writeScript "bash-entrypoint.sh" ''
-          #!${pkgs.bash}/bin/bash
-          cd ${bashAgentPackage}/share/bash-agent
-          exec ${pythonEnv}/bin/python3 ${bashAgentPackage}/share/bash-agent/bash-agent.py "$@"
-        '';
+
 
         baseContents = with pkgs; [
           pythonEnv
@@ -159,55 +145,19 @@
           procps
           cacert
           poetry
-          inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
-          inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
-          
-
         ];
 
-      in {
+      in
+      {
         devShells.default = devshell;
 
         # Packages
-        packages.default = agentScript;
+        packages.default = webAgentScript;
         packages.webAgent = webAgentScript;
-        packages.bashAgent = bashAgentScript;
-
-        # Apps for running with nix run
-        apps.default = {
-          type = "app";
-          program = "${(bashAgentScript)}/bin/bash-agent";
-        };
 
         apps.webagent = {
           type = "app";
-          program = "${(webAgentScript)}/bin/webagent";
-        };
-
-        apps.bashagent = {
-          type = "app";
-          program = "${(bashAgentScript)}/bin/bash-agent";
-        };
-
-        # Docker images
-        packages.bashAgentDocker = pkgs.dockerTools.streamLayeredImage {
-          name = "bash-agent";
-          tag = "latest";
-          maxLayers = 120;
-          contents = baseContents;
-          config = {
-            Entrypoint = [ "${bashAgentEntrypoint}" ];
-            WorkingDir = "/app";
-            User = "1000:1000";
-            Env = [
-              "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
-              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-              "CURL_CA_BUNDLE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
-            ];
-          };
+          program = lib.getExe webAgentScript;
         };
 
         # New web agent Docker image (using agent.py)
@@ -222,7 +172,12 @@
             User = "1000:1000";
             Env = [
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
+              "LD_LIBRARY_PATH=${
+                pkgs.lib.makeLibraryPath [
+                  pkgs.stdenv.cc.cc.lib
+                  pkgs.glibc
+                ]
+              }"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
@@ -230,5 +185,6 @@
             ];
           };
         };
-      });
+      }
+    );
 }
