@@ -2,6 +2,9 @@
   "mcpServers": {
     "playwright": {
       "command": "mcp-server-playwright"
+    },
+    "sequentialthinking": {
+      "command": "mcp-server-sequential-thinking"
     }
   }
 }
