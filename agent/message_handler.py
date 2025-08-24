@@ -240,7 +240,7 @@ def handle_user_message_processing(data, session_id, socketio):
         if tool_calls:
             from .tool_execution import handle_tool_call_web
             for tool_call in tool_calls:
-                handle_tool_call_web(tool_call, session_id, auto_confirm)
+                handle_tool_call_web(tool_call, session_id, auto_confirm, socketio)
 
     except Exception as e:
         emit(

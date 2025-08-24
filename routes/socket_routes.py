@@ -111,7 +111,7 @@ def register_socket_events(socketio, app):
             # Execute the tool call
             tool_call = data.get("tool_call")
             if tool_call:
-                execute_tool_call_web(tool_call, session_id)
+                execute_tool_call_web(tool_call, session_id, socketio)
         else:
             # Handle tool cancellation with proper tool_result
             tool_call = data.get("tool_call")
@@ -162,7 +162,7 @@ def register_socket_events(socketio, app):
                 if new_tool_calls:
                     for new_tool_call in new_tool_calls:
                         handle_tool_call_web(
-                            new_tool_call, session_id, sessions[session_id]["auto_confirm"]
+                            new_tool_call, session_id, sessions[session_id]["auto_confirm"], socketio
                         )
             else:
                 # Fallback if no tool_call data

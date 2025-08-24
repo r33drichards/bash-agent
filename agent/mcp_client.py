@@ -262,7 +262,7 @@ async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None,
             )
 
 
-async def handle_mcp_tool_call(session_id, tool_call):
+async def handle_mcp_tool_call(session_id, tool_call, socketio_instance=None):
     """Handle MCP tool call asynchronously"""
     try:
         if session_id not in sessions:
@@ -281,27 +281,27 @@ async def handle_mcp_tool_call(session_id, tool_call):
         else:
             content = result.get("content", "No result returned")
 
-        from flask_socketio import SocketIO
-        socketio = SocketIO()
-        socketio.emit(
-            "tool_result",
-            {
-                "tool_use_id": tool_call["id"],
-                "result": content,
-                "timestamp": datetime.now().isoformat(),
-            },
-            room=session_id,
-        )
+        # Use the passed socketio instance if available
+        if socketio_instance:
+            socketio_instance.emit(
+                "tool_result",
+                {
+                    "tool_use_id": tool_call["id"],
+                    "result": content,
+                    "timestamp": datetime.now().isoformat(),
+                },
+                room=session_id,
+            )
 
     except Exception as e:
-        from flask_socketio import SocketIO
-        socketio = SocketIO()
-        socketio.emit(
-            "tool_result",
-            {
-                "tool_use_id": tool_call["id"],
-                "result": f"Error executing MCP tool: {str(e)}",
-                "timestamp": datetime.now().isoformat(),
+        # Use the passed socketio instance if available
+        if socketio_instance:
+            socketio_instance.emit(
+                "tool_result",
+                {
+                    "tool_use_id": tool_call["id"],
+                    "result": f"Error executing MCP tool: {str(e)}",
+                    "timestamp": datetime.now().isoformat(),
             },
             room=session_id,
         )

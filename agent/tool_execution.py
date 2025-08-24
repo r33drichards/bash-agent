@@ -27,10 +27,10 @@ from .session_manager import sessions
 from .mcp_client import handle_mcp_tool_call
 
 
-def handle_tool_call_web(tool_call, session_id, auto_confirm):
+def handle_tool_call_web(tool_call, session_id, auto_confirm, socketio_instance=None):
     """Handle tool call in web context"""
     if auto_confirm:
-        execute_tool_call_web(tool_call, session_id)
+        execute_tool_call_web(tool_call, session_id, socketio_instance)
     else:
         # Send confirmation request
         emit(
@@ -45,7 +45,7 @@ def handle_tool_call_web(tool_call, session_id, auto_confirm):
         )
 
 
-def execute_tool_call_web(tool_call, session_id):
+def execute_tool_call_web(tool_call, session_id, socketio_instance=None):
     """Execute tool call and emit results"""
     try:
         print(f"DEBUG: execute_tool_call_web received tool_call: {tool_call}")
@@ -110,13 +110,10 @@ def execute_tool_call_web(tool_call, session_id):
                 else:
                     # MCP client is initialized, try to call the tool asynchronously
                     try:
-
-                        def run_mcp_tool():
-                            asyncio.run(handle_mcp_tool_call(session_id, tool_call))
-
                         # Run MCP tool call in a separate thread
                         mcp_tool_thread = threading.Thread(
-                            target=run_mcp_tool, daemon=True
+                            target=lambda: asyncio.run(handle_mcp_tool_call(session_id, tool_call, socketio_instance)), 
+                            daemon=True
                         )
                         mcp_tool_thread.start()
 
@@ -204,7 +201,7 @@ def execute_tool_call_web(tool_call, session_id):
         if new_tool_calls:
             for new_tool_call in new_tool_calls:
                 handle_tool_call_web(
-                    new_tool_call, session_id, sessions[session_id]["auto_confirm"]
+                    new_tool_call, session_id, sessions[session_id]["auto_confirm"], socketio_instance
                 )
 
     except Exception as e:
