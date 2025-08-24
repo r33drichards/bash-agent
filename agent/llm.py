@@ -78,8 +78,12 @@ class LLM:
             base_prompt += rag_info + "\n\n"
 
         # Add custom system prompt if configured
-        if "SYSTEM_PROMPT" in current_app.config and current_app.config["SYSTEM_PROMPT"]:
-            base_prompt += current_app.config["SYSTEM_PROMPT"]
+        try:
+            if "SYSTEM_PROMPT" in current_app.config and current_app.config["SYSTEM_PROMPT"]:
+                base_prompt += current_app.config["SYSTEM_PROMPT"]
+        except RuntimeError:
+            # Working outside of application context, skip Flask config
+            pass
 
         print("SYSTEM PROMPT:", base_prompt)
 
@@ -111,6 +115,7 @@ class LLM:
                     return rag_info
         except Exception:
             # Silently ignore errors to avoid breaking initialization
+            # This includes cases where sessions are not available (e.g., in tests)
             pass
 
         return None
@@ -255,6 +260,7 @@ class LLM:
                         room=session_id,
                     )
             except:
+                # Ignore if not in web context or Flask context unavailable
                 pass
 
         # Return response text and tool calls
@@ -543,7 +549,8 @@ class LLM:
                         room=session_id,
                     )
             except:
-                pass  # Ignore if not in web context
+                # Ignore if not in web context or Flask context unavailable
+                pass
 
         assistant_response = {"role": "assistant", "content": []}
         tool_calls = []
