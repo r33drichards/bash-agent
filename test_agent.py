@@ -8,8 +8,7 @@ class TestLLMValidation:
     
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_removes_orphaned_tool_results(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_removes_orphaned_tool_results(self, mock_anthropic):
         """Test that orphaned tool_result blocks are removed."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         
@@ -48,8 +47,7 @@ class TestLLMValidation:
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_preserves_valid_tool_results(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_preserves_valid_tool_results(self, mock_anthropic):
         """Test that valid tool_result blocks are preserved."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         
@@ -84,8 +82,7 @@ class TestLLMValidation:
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_handles_mixed_content(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_handles_mixed_content(self, mock_anthropic):
         """Test validation with mixed content types."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         
@@ -130,8 +127,7 @@ class TestLLMValidation:
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_handles_object_tool_use(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_handles_object_tool_use(self, mock_anthropic):
         """Test validation with tool_use as objects (not dicts)."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         
@@ -166,8 +162,7 @@ class TestLLMValidation:
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_empty_messages(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_empty_messages(self, mock_anthropic):
         """Test validation with empty message list."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         llm.messages = []
@@ -178,8 +173,7 @@ class TestLLMValidation:
 
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
-    def test_validate_message_structure_no_tool_results(self, mock_memory_manager, mock_anthropic):
+    def test_validate_message_structure_no_tool_results(self, mock_anthropic):
         """Test validation when there are no tool_result blocks."""
         llm = LLM("claude-3-7-sonnet-latest", "test-session")
         
@@ -202,12 +196,11 @@ class TestSessionManagement:
     @pytest.mark.skip(reason="Flask session mocking is complex - test demonstrates the fix concept")
     @patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'})
     @patch('anthropic.Anthropic')
-    @patch('agent.get_current_memory_manager')
     @patch('flask.session')
     @patch('agent.emit')
     @patch('agent.cleanup_old_files')
     @patch('agent.save_conversation_history')
-    def test_session_removed_before_storing_conversation_history(self, mock_save_history, mock_cleanup, mock_emit, mock_flask_session, mock_memory_manager, mock_anthropic):
+    def test_session_removed_before_storing_conversation_history(self, mock_save_history, mock_cleanup, mock_emit, mock_flask_session, mock_anthropic):
         """Test that session removal during message processing is handled gracefully."""
         from agent import handle_user_message, sessions
         

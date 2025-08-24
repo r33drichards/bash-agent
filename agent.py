@@ -1875,7 +1875,10 @@ class MCPClient:
                     "filesystem": {
                         "command": "mcp-server-filesystem",
                         "args": [app.config.get("WORKING_DIR")],
-                    }
+                    },
+                    "playwright": {"command": "mcp-server-playwright"},
+                    "sequentialthinking": {"command": "mcp-server-sequential-thinking"},
+                    "memory": {"command": "mcp-server-memory"},
                 }
             }
             print(
@@ -2052,16 +2055,12 @@ class LLM:
 
     def _build_system_prompt(self):
         """Build the system prompt dynamically including RAG repository information."""
-        base_prompt = (
-        )
-
+        base_prompt = ()
 
         # Add RAG repository information if available
         rag_info = self._get_rag_repositories_info()
         if rag_info:
             base_prompt += rag_info + "\n\n"
-
-
 
         # Add custom system prompt if configured
         if "SYSTEM_PROMPT" in app.config and app.config["SYSTEM_PROMPT"]:
