@@ -26,7 +26,7 @@
 
         # Create a proper derivation for webagent (new)
         webAgentPackage = pkgs.stdenv.mkDerivation {
-          name = "web-agent";
+          name = "agent";
           src = ./.;
           nativeBuildInputs = [ pythonEnv ];
           buildInputs = [
@@ -44,23 +44,18 @@
             runHook postCheck
           '';
           doCheck = true;
-          installPhase = ''
-            mkdir -p $out/bin $out/share/bash-agent
-            cp -r . $out/share/bash-agent/
-            cat > $out/bin/webagent << EOF
-            #!${pkgs.bash}/bin/bash
-            export PATH=$PATH:${lib.makeBinPath [
-              inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
-              inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
-              inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
-            ]}
-            cd $out/share/bash-agent
-            exec ${pythonEnv}/bin/python3 $out/share/bash-agent/agent.py "\$@"
-            EOF
-            chmod +x $out/bin/webagent
+          buildPhase = ''
+            echo "Build phase completed"
           '';
+          installPhase = ''
+            mkdir -p $out/bin
+            cp -r $src/* $out/bin/
+            chmod +x $out/bin/agent.py
+          '';
+          meta = {
+            mainProgram = "agent.py";
+          };
         };
-
 
         webAgentScript = webAgentPackage;
 
@@ -109,14 +104,19 @@
 
         testPythonEnv = pkgs.python3.withPackages testPythonPackages;
 
-        # Web agent entrypoint
-        agentEntrypoint = pkgs.writeScript "entrypoint.sh" ''
-          #!${pkgs.bash}/bin/bash
-          cd ${agentPackage}/share/bash-agent
-          exec ${pythonEnv}/bin/python3 ${agentPackage}/share/bash-agent/agent.py "$@"
-        '';
-
-
+        # Web agent executable using writeShellApplication
+        webAgentExecutable = pkgs.writeShellApplication {
+          name = "webagent";
+          runtimeInputs = [ 
+            pythonEnv
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
+          ];
+          text = ''
+            ${pythonEnv}/bin/python3 ${lib.getExe webAgentPackage} "$@"
+          '';
+        };
 
         baseContents = with pkgs; [
           pythonEnv
@@ -157,7 +157,7 @@
 
         apps.webagent = {
           type = "app";
-          program = lib.getExe webAgentScript;
+          program = lib.getExe webAgentExecutable;
         };
 
         # New web agent Docker image (using agent.py)
@@ -167,17 +167,12 @@
           maxLayers = 120;
           contents = baseContents;
           config = {
-            Entrypoint = [ "${agentEntrypoint}" ];
+            Entrypoint = [ "${lib.getExe webAgentExecutable}" ];
             WorkingDir = "/app";
             User = "1000:1000";
             Env = [
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${
-                pkgs.lib.makeLibraryPath [
-                  pkgs.stdenv.cc.cc.lib
-                  pkgs.glibc
-                ]
-              }"
+              "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"

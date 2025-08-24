@@ -49,19 +49,9 @@ pkgs.mkShell {
     sqlite
     nettools
     ps
-    inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-filesystem
-    inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-playwright
+    # inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-filesystem
+    # inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-playwright
   ];
   
-  shellHook = ''
-    echo "Bash Agent development environment loaded!"
-    echo "Available commands:"
-    echo "  python agent.py --help       # Start web agent"
-    echo "  python bash-agent.py --help  # Start CLI agent"
-    echo ""
-    echo "Session persistence features:"
-    echo "  - Cmd+K creates new sessions"
-    echo "  - Sessions persist across server restarts"
-    echo "  - Background tasks are restored"
-  '';
+
 }
