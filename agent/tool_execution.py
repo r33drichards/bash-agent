@@ -264,10 +264,33 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "sqlite":
-        db_path = tool_call["input"]["db_path"]
-        query = tool_call["input"]["query"]
-        output_json = tool_call["input"].get("output_json")
-        print_result = tool_call["input"].get("print_result", False)
+        tool_input = tool_call.get("input", {})
+        db_path = tool_input.get("db_path")
+        query = tool_input.get("query")
+        if not db_path:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'db_path' parameter is required for sqlite tool",
+                    )
+                ],
+            )
+        if not query:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'query' parameter is required for sqlite tool",
+                    )
+                ],
+            )
+        output_json = tool_input.get("output_json")
+        print_result = tool_input.get("print_result", False)
         output_text = execute_sqlite(db_path, query, output_json, print_result)
         return dict(
             type="tool_result",
@@ -275,8 +298,20 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "ipython":
-        code = tool_call["input"]["code"]
-        print_result = tool_call["input"].get("print_result", False)
+        tool_input = tool_call.get("input", {})
+        code = tool_input.get("code")
+        if not code:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'code' parameter is required for ipython tool",
+                    )
+                ],
+            )
+        print_result = tool_input.get("print_result", False)
         output_text, plots = execute_ipython(code, print_result)
         result = dict(
             type="tool_result",
@@ -286,13 +321,25 @@ def execute_tool_call(tool_call):
         return result
 
     elif tool_call["name"] == "create_todo":
-        title = tool_call["input"]["title"]
-        description = tool_call["input"].get("description", "")
-        priority = tool_call["input"].get("priority", "medium")
-        project = tool_call["input"].get("project")
-        due_date = tool_call["input"].get("due_date")
-        tags = tool_call["input"].get("tags")
-        estimated_hours = tool_call["input"].get("estimated_hours")
+        tool_input = tool_call.get("input", {})
+        title = tool_input.get("title")
+        if not title:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'title' parameter is required for create_todo tool",
+                    )
+                ],
+            )
+        description = tool_input.get("description", "")
+        priority = tool_input.get("priority", "medium")
+        project = tool_input.get("project")
+        due_date = tool_input.get("due_date")
+        tags = tool_input.get("tags")
+        estimated_hours = tool_input.get("estimated_hours")
         output_text = create_todo(
             title, description, priority, project, due_date, tags, estimated_hours
         )
@@ -302,8 +349,20 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "update_todo":
-        todo_id = tool_call["input"]["todo_id"]
-        updates = {k: v for k, v in tool_call["input"].items() if k != "todo_id"}
+        tool_input = tool_call.get("input", {})
+        todo_id = tool_input.get("todo_id")
+        if not todo_id:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'todo_id' parameter is required for update_todo tool",
+                    )
+                ],
+            )
+        updates = {k: v for k, v in tool_input.items() if k != "todo_id"}
         output_text = update_todo(todo_id, **updates)
         return dict(
             type="tool_result",
@@ -344,7 +403,19 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "get_todo":
-        todo_id = tool_call["input"]["todo_id"]
+        tool_input = tool_call.get("input", {})
+        todo_id = tool_input.get("todo_id")
+        if not todo_id:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'todo_id' parameter is required for get_todo tool",
+                    )
+                ],
+            )
         output_text = get_todo(todo_id)
         return dict(
             type="tool_result",
@@ -352,7 +423,19 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "delete_todo":
-        todo_id = tool_call["input"]["todo_id"]
+        tool_input = tool_call.get("input", {})
+        todo_id = tool_input.get("todo_id")
+        if not todo_id:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'todo_id' parameter is required for delete_todo tool",
+                    )
+                ],
+            )
         output_text = delete_todo(todo_id)
         return dict(
             type="tool_result",
@@ -368,9 +451,21 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "github_rag_index":
-        repo_url = tool_call["input"]["repo_url"]
-        include_extensions = tool_call["input"].get("include_extensions")
-        ignore_dirs = tool_call["input"].get("ignore_dirs")
+        tool_input = tool_call.get("input", {})
+        repo_url = tool_input.get("repo_url")
+        if not repo_url:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'repo_url' parameter is required for github_rag_index tool",
+                    )
+                ],
+            )
+        include_extensions = tool_input.get("include_extensions")
+        ignore_dirs = tool_input.get("ignore_dirs")
         output_text = github_rag_index(repo_url, include_extensions, ignore_dirs)
         return dict(
             type="tool_result",
@@ -378,9 +473,32 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)],
         )
     elif tool_call["name"] == "github_rag_query":
-        collection_name = tool_call["input"]["collection_name"]
-        question = tool_call["input"]["question"]
-        max_results = tool_call["input"].get("max_results", 5)
+        tool_input = tool_call.get("input", {})
+        collection_name = tool_input.get("collection_name")
+        question = tool_input.get("question")
+        if not collection_name:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'collection_name' parameter is required for github_rag_query tool",
+                    )
+                ],
+            )
+        if not question:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'question' parameter is required for github_rag_query tool",
+                    )
+                ],
+            )
+        max_results = tool_input.get("max_results", 5)
         output_text = github_rag_query(collection_name, question, max_results)
         return dict(
             type="tool_result",
