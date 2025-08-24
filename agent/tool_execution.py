@@ -323,8 +323,20 @@ def execute_tool_call(tool_call):
         )
 
     elif tool_call["name"] == "search_todos":
-        query = tool_call["input"]["query"]
-        include_completed = tool_call["input"].get("include_completed", False)
+        tool_input = tool_call.get("input", {})
+        query = tool_input.get("query")
+        if not query:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[
+                    dict(
+                        type="text",
+                        text="Error: 'query' parameter is required for search_todos tool",
+                    )
+                ],
+            )
+        include_completed = tool_input.get("include_completed", False)
         output_text = search_todos(query, include_completed)
         return dict(
             type="tool_result",
