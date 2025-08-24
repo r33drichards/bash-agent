@@ -2596,6 +2596,7 @@ class MCPClient:
                 "mcpServers": {
                     "filesystem": {
                         "command": "mcp-server-filesystem",
+                        "args": [app.config.get('WORKING_DIR')]
                     }
                 }
             }
