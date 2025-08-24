@@ -909,6 +909,10 @@ def handle_tool_confirm(data):
             llm = sessions[session_id]['llm']
             output, new_tool_calls = llm([tool_result])
             
+            # Validate message structure after tool result processing
+            if hasattr(llm, '_validate_message_structure'):
+                llm._validate_message_structure(skip_active_tools=False)
+            
             # Send agent response
             agent_message = {
                 'type': 'agent',
@@ -1060,31 +1064,44 @@ async def handle_mcp_tool_call(session_id, tool_call):
 def execute_tool_call_web(tool_call, session_id):
     """Execute tool call and emit results"""
     try:
+        print(f"DEBUG: execute_tool_call_web received tool_call: {tool_call}")
+        print(f"DEBUG: tool_call type: {type(tool_call)}, name: {tool_call.get('name')}, input: {tool_call.get('input')}")
+        
         # Send detailed tool execution info
         tool_info = {
             'type': 'tool_execution',
             'tool_name': tool_call['name'],
-            'tool_input': tool_call['input'],
+            'tool_input': tool_call.get('input', {}),
             'timestamp': datetime.now().isoformat()
         }
         
         # Add the actual code/command being executed
+        tool_input = tool_call.get('input', {})
         if tool_call['name'] == 'bash':
-            tool_info['code'] = tool_call['input']['command']
+            tool_info['code'] = tool_input.get('command', 'No command provided')
             tool_info['language'] = 'bash'
-            tool_info['timeout'] = tool_call['input'].get('timeout', 30)
-            tool_info['stream_output'] = tool_call['input'].get('stream_output', False)
+            tool_info['timeout'] = tool_input.get('timeout', 30)
+            tool_info['stream_output'] = tool_input.get('stream_output', False)
         elif tool_call['name'] == 'ipython':
-            tool_info['code'] = tool_call['input']['code']
+            tool_info['code'] = tool_input.get('code', 'No code provided')
             tool_info['language'] = 'python'
         elif tool_call['name'] == 'sqlite':
-            tool_info['code'] = tool_call['input']['query']
+            tool_info['code'] = tool_input.get('query', 'No query provided')
             tool_info['language'] = 'sql'
         
         emit('tool_execution_start', tool_info, room=session_id)
         
         # Check if this is an MCP tool and handle async execution
-        if '_' in tool_call['name'] and session_id in sessions:
+        is_mcp_tool = False
+        if session_id in sessions:
+            session_data = sessions[session_id]
+            mcp_client = session_data.get('mcp_client')
+            if mcp_client and hasattr(mcp_client, 'available_tools'):
+                # Check if tool name matches any MCP tool
+                is_mcp_tool = any(tool['name'] == tool_call['name'] for tool in mcp_client.available_tools)
+                print(f"DEBUG: Tool '{tool_call['name']}' - MCP tool check: {is_mcp_tool}")
+        
+        if is_mcp_tool and session_id in sessions:
             session_data = sessions[session_id]
             if session_data.get('mcp_client'):
                 # Initialize MCP client if not done yet
@@ -1123,6 +1140,7 @@ def execute_tool_call_web(tool_call, session_id):
                 }
         else:
             # Execute the tool normally
+            print(f"DEBUG: Executing standard tool: {tool_call['name']} with input: {tool_call.get('input')}")
             result = execute_tool_call(tool_call)
         
         # Extract the result content
@@ -1152,6 +1170,10 @@ def execute_tool_call_web(tool_call, session_id):
         llm = sessions[session_id]['llm']
         output, new_tool_calls = llm([result])
         
+        # Validate message structure after tool result processing
+        if hasattr(llm, '_validate_message_structure'):
+            llm._validate_message_structure(skip_active_tools=False)
+        
         # Send agent response
         agent_message = {
             'type': 'agent',
@@ -1169,6 +1191,10 @@ def execute_tool_call_web(tool_call, session_id):
                 handle_tool_call_web(new_tool_call, session_id, sessions[session_id]['auto_confirm'])
                 
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR: Tool execution failed: {str(e)}")
+        print(f"ERROR: Full traceback:\n{error_details}")
         emit('message', {
             'type': 'error',
             'content': f'Tool execution error: {str(e)}',
@@ -1177,10 +1203,27 @@ def execute_tool_call_web(tool_call, session_id):
 
 def execute_tool_call(tool_call):
     """Execute a tool call and return the result"""
+    print(f"DEBUG: execute_tool_call received: name={tool_call.get('name')}, input={tool_call.get('input')}")
     if tool_call["name"] == "bash":
-        command = tool_call["input"]["command"]
-        timeout = tool_call["input"].get("timeout", 30)
-        stream_output = tool_call["input"].get("stream_output", False)
+        # Add better error handling for input format
+        tool_input = tool_call.get("input", {})
+        if not isinstance(tool_input, dict):
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[dict(type="text", text=f"Error: Tool input must be a dictionary, got {type(tool_input)}")]
+            )
+        
+        command = tool_input.get("command")
+        if not command:
+            return dict(
+                type="tool_result",
+                tool_use_id=tool_call["id"],
+                content=[dict(type="text", text="Error: 'command' parameter is required for bash tool")]
+            )
+        
+        timeout = tool_input.get("timeout", 30)
+        stream_output = tool_input.get("stream_output", False)
         output_text = execute_bash(command, timeout, stream_output)
         return dict(
             type="tool_result",
@@ -1356,12 +1399,9 @@ def execute_tool_call(tool_call):
             content=[dict(type="text", text=output_text)]
         )
     else:
-        # Check if this is an MCP tool
-        if '_' in tool_call['name']:  # MCP tools are prefixed with server name
-            # This needs to be handled by the web version since we need async
-            raise Exception(f"MCP tool {tool_call['name']} must be called through web interface")
-        else:
-            raise Exception(f"Unsupported tool: {tool_call['name']}")
+        # For now, just return an error for unsupported tools
+        # MCP tools should be handled through the web interface with proper async support
+        raise Exception(f"Unsupported tool: {tool_call['name']}")
 
 
 bash_tool = {
@@ -3019,12 +3059,32 @@ class LLM:
                         print(f"DEBUG: Removed cache_control from user message")
                 break
     
-    def _validate_message_structure(self):
-        """Validate message structure to prevent orphaned tool_result blocks."""
+    def _validate_message_structure(self, skip_active_tools=True):
+        """Validate message structure to prevent orphaned tool_result blocks.
+        
+        Args:
+            skip_active_tools: If True, skip validation if there are recent tool_use blocks
+                              that may still be waiting for results.
+        """
         if not self.messages:
             return
             
         print(f"DEBUG: Validating message structure with {len(self.messages)} messages")
+        
+        # If skip_active_tools is True, check for recent tool_use blocks without results
+        if skip_active_tools and len(self.messages) >= 2:
+            last_message = self.messages[-1]
+            if (last_message.get("role") == "assistant" and 
+                isinstance(last_message.get("content"), list)):
+                # Check if last assistant message has tool_use blocks
+                has_tool_use = any(
+                    (isinstance(c, dict) and c.get("type") == "tool_use") or
+                    (hasattr(c, 'type') and c.type == "tool_use")
+                    for c in last_message["content"]
+                )
+                if has_tool_use:
+                    print("DEBUG: Skipping validation - recent tool_use blocks may still be active")
+                    return
         
         # Print all messages for debugging
         for i, msg in enumerate(self.messages):
@@ -3125,9 +3185,8 @@ class LLM:
         if user_message.get("content") and len(user_message["content"]) > 0:
             user_message["content"][-1]["cache_control"] = {"type": "ephemeral"}
         
-        # Validate message structure to prevent orphaned tool_result blocks
-        # This must happen AFTER adding the user message since tool_results are in the new message
-        self._validate_message_structure()
+        # Note: Message validation is moved to after tool execution to prevent interference
+        # with active tool calls that haven't received results yet
         
         try:
             # Use streaming if callback provided
@@ -3221,6 +3280,12 @@ class LLM:
         
         self.messages.append(assistant_response)
         print(f"DEBUG: Total messages after adding assistant response: {len(self.messages)}")
+        
+        # Validate message structure after assistant response is added, but only if no tools were called
+        # (tool results will be added later and we don't want to interfere)
+        if not tool_calls:
+            self._validate_message_structure(skip_active_tools=False)
+            
         return output_text, tool_calls
 
 

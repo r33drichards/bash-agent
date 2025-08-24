@@ -12,7 +12,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        devshell = pkgs.callPackage ./shell.nix { inherit pkgs; };
+        devshell = pkgs.callPackage ./shell.nix { inherit pkgs; inputs = inputs; };
 
         # Create a proper derivation that includes all files
         agentPackage = pkgs.stdenv.mkDerivation {

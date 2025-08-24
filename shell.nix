@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> { } }:
+{ pkgs ? import <nixpkgs> { }, inputs ? { } }:
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
@@ -49,6 +49,8 @@ pkgs.mkShell {
     sqlite
     nettools
     ps
+    inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-filesystem
+    inputs.nix-mcp-servers.packages.${pkgs.system}.mcp-server-playwright
   ];
   
   shellHook = ''
