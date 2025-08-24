@@ -4,6 +4,8 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   # inputs.unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
+  inputs.nix-mcp-servers.url = "github:cameronfyfe/nix-mcp-servers";
+
 
   outputs = { self, nixpkgs, flake-utils, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
@@ -157,6 +159,10 @@
           procps
           cacert
           poetry
+          inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
+          inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
+          
+
         ];
 
       in {

@@ -2595,9 +2595,7 @@ class MCPClient:
             example_config = {
                 "mcpServers": {
                     "filesystem": {
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/robertwendt/bash-agent/data"],
-                        "env": {}
+                        "command": "mcp-server-filesystem",
                     }
                 }
             }
