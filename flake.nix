@@ -28,14 +28,6 @@
         webAgentPackage = pkgs.stdenv.mkDerivation {
           name = "agent";
           src = ./.;
-          nativeBuildInputs = [ pythonEnv ];
-          buildInputs = [
-            pythonEnv
-            inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
-            inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
-            inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
-
-          ];
           checkPhase = ''
             runHook preCheck
             echo "Running tests..."
@@ -112,6 +104,7 @@
             inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
             inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
             inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-memory
           ];
           text = ''
             ${pythonEnv}/bin/python3 ${lib.getExe webAgentPackage} "$@"
@@ -152,8 +145,8 @@
         devShells.default = devshell;
 
         # Packages
-        packages.default = webAgentScript;
-        packages.webAgent = webAgentScript;
+        packages.default = webAgentExecutable;
+        packages.webAgent = webAgentExecutable;
 
         apps.webagent = {
           type = "app";

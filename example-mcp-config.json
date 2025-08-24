@@ -5,6 +5,9 @@
     },
     "sequentialthinking": {
       "command": "mcp-server-sequential-thinking"
+    },
+    "memory": {
+      "command": "mcp-server-memory"
     }
   }
 }
