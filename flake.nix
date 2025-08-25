@@ -161,7 +161,7 @@
           name = "webagent";
           tag = "latest";
           maxLayers = 120;
-          contents = baseContents ++ [ chromeLayout ];
+          contents = baseContents;
           config = {
             Entrypoint = [ "${lib.getExe webAgentExecutable}" ];
             WorkingDir = "/app";
