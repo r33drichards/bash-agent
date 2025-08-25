@@ -154,6 +154,30 @@ class LLM:
         """Summarize an image using a separate LLM call to save tokens."""
         print(f"Summarizing image: {filename}")
 
+        # Detect image format from base64 data
+        media_type = "image/png"  # default
+        try:
+            # Check the first few bytes of the decoded data to determine format
+            import base64
+            header = base64.b64decode(image_data[:100])  # Just check header
+            
+            # JPEG magic bytes: FF D8 FF
+            if header[:3] == b'\xff\xd8\xff':
+                media_type = "image/jpeg"
+            # PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+            elif header[:8] == b'\x89PNG\r\n\x1a\n':
+                media_type = "image/png"
+            # GIF magic bytes: GIF87a or GIF89a
+            elif header[:6] in (b'GIF87a', b'GIF89a'):
+                media_type = "image/gif"
+            # WebP magic bytes: RIFF....WEBP
+            elif header[:4] == b'RIFF' and header[8:12] == b'WEBP':
+                media_type = "image/webp"
+                
+            print(f"Detected image format: {media_type}")
+        except Exception as e:
+            print(f"Could not detect image format, using default: {e}")
+
         # Create a simple client for image summarization
         temp_messages = [
             {
@@ -167,7 +191,7 @@ class LLM:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": "image/png",
+                            "media_type": media_type,
                             "data": image_data,
                         },
                     },

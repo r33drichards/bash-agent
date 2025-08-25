@@ -139,13 +139,54 @@ def execute_tool_call_web(tool_call, session_id, socketio_instance=None):
                     content = mcp_result.get("content", "No result returned")
                     # Handle different content types from MCP
                     if isinstance(content, list) and content:
-                        # If content is a list, try to extract text from first item
-                        if hasattr(content[0], 'text'):
-                            result_text = content[0].text
-                        elif isinstance(content[0], dict) and 'text' in content[0]:
-                            result_text = content[0]['text']
+                        # Check if content contains image data
+                        has_image = False
+                        image_data = None
+                        text_content = ""
+                        
+                        for item in content:
+                            # Handle different item formats
+                            if hasattr(item, '__class__') and 'ImageContent' in str(item.__class__):
+                                # MCP ImageContent object
+                                has_image = True
+                                if hasattr(item, 'data'):
+                                    image_data = item.data
+                                elif hasattr(item, 'source') and hasattr(item.source, 'data'):
+                                    image_data = item.source.data
+                                    
+                            elif isinstance(item, dict):
+                                if item.get('type') == 'image':
+                                    has_image = True
+                                    if 'data' in item:
+                                        image_data = item['data']
+                                    elif 'source' in item and 'data' in item['source']:
+                                        image_data = item['source']['data']
+                                elif item.get('type') == 'text':
+                                    text_content += item.get('text', '')
+                            elif hasattr(item, 'text'):
+                                text_content = item.text
+                        
+                        # If we found an image, summarize it
+                        if has_image and image_data:
+                            # Get the LLM instance to access the summarize_image method
+                            llm = sessions[session_id]["llm"]
+                            if hasattr(llm, 'summarize_image'):
+                                # Get the tool name for filename
+                                filename = f"{tool_call['name']}_screenshot.png"
+                                summary = llm.summarize_image(image_data, filename)
+                                result_text = f"[Screenshot captured]\n\n{summary}"
+                                if text_content:
+                                    result_text = f"{text_content}\n\n{result_text}"
+                            else:
+                                result_text = "[Screenshot captured - image data received but summarization not available]"
                         else:
-                            result_text = str(content)
+                            # No image, handle as before
+                            if hasattr(content[0], 'text'):
+                                result_text = content[0].text
+                            elif isinstance(content[0], dict) and 'text' in content[0]:
+                                result_text = content[0]['text']
+                            else:
+                                result_text = str(content)
                     else:
                         result_text = str(content)
 
