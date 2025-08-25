@@ -1,10 +1,16 @@
 import base64
-import matplotlib.pyplot as plt
-import matplotlib
 import io
 import contextlib
+import os
 from IPython.core.interactiveshell import InteractiveShell
 from IPython.utils.capture import capture_output
+
+# Configure matplotlib before importing
+os.environ.setdefault('MPLCONFIGDIR', '/tmp/matplotlib')
+os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
+
+import matplotlib
+import matplotlib.pyplot as plt
 
 ipython_tool = {
     "name": "ipython",
