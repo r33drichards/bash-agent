@@ -47,7 +47,8 @@ jobs:
           SKOPEO_PASS: ${{ secrets.DOCKER_PASSWORD }}
         run: |
           echo "Building ${{ matrix.flake_image }} with tag $TAG"
-          nix build .#${{ matrix.flake }}
+          export NIXPKGS_ALLOW_UNFREE=1
+          nix build --impure .#${{ matrix.flake }}
           echo "Built ${{ matrix.flake_image }}"
           TAG=$(git rev-parse HEAD)
           echo "Logging in to Docker Hub"
