@@ -79,7 +79,7 @@ class LLM:
 
     def _build_system_prompt(self):
         """Build the system prompt dynamically including RAG repository information."""
-        base_prompt = ""
+        base_prompt = "use sequential thinking to break down complex tasks into manageable todos and work through them one by one."
 
         # Add RAG repository information if available
         rag_info = self._get_rag_repositories_info()
