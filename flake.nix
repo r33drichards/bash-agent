@@ -143,6 +143,42 @@
           cacert
           poetry
           google-chrome
+          # Chrome/Playwright dependencies
+          fontconfig
+          freetype
+          xorg.libX11
+          xorg.libXcomposite
+          xorg.libXcursor
+          xorg.libXdamage
+          xorg.libXext
+          xorg.libXfixes
+          xorg.libXi
+          xorg.libXrandr
+          xorg.libXrender
+          xorg.libXtst
+          xorg.libxcb
+          xorg.libxshmfence
+          nspr
+          nss
+          alsa-lib
+          at-spi2-atk
+          at-spi2-core
+          cups.lib
+          expat
+          glib
+          gtk3
+          libdrm
+          libxkbcommon
+          mesa
+          pango
+          # Essential fonts for Chrome
+          liberation_ttf
+          dejavu_fonts
+          noto-fonts
+          noto-fonts-emoji
+          # Additional dependencies for headless Chrome
+          dbus
+          systemd
         ];
 
         # Create Chrome at expected Playwright location and then start agentexecutable
@@ -181,12 +217,37 @@
                 pkgs.lib.makeLibraryPath [
                   pkgs.stdenv.cc.cc.lib
                   pkgs.glibc
+                  pkgs.xorg.libX11
+                  pkgs.xorg.libXcomposite
+                  pkgs.xorg.libXcursor
+                  pkgs.xorg.libXdamage
+                  pkgs.xorg.libXext
+                  pkgs.xorg.libXfixes
+                  pkgs.xorg.libXi
+                  pkgs.xorg.libXrandr
+                  pkgs.xorg.libXrender
+                  pkgs.xorg.libXtst
+                  pkgs.xorg.libxcb
+                  pkgs.xorg.libxshmfence
+                  pkgs.nspr
+                  pkgs.nss
+                  pkgs.alsa-lib
+                  pkgs.at-spi2-atk
+                  pkgs.at-spi2-core
+                  pkgs.cups.lib
+                  pkgs.gtk3
+                  pkgs.libdrm
+                  pkgs.libxkbcommon
+                  pkgs.mesa
+                  pkgs.pango
                 ]
               }"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "CURL_CA_BUNDLE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "FONTCONFIG_PATH=${pkgs.fontconfig.out}/etc/fonts"
+              "FONTCONFIG_FILE=${pkgs.fontconfig.out}/etc/fonts/fonts.conf"
             ];
           };
         };
