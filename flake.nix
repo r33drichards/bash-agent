@@ -138,6 +138,7 @@
           procps
           cacert
           poetry
+          google-chrome
         ];
 
       in
