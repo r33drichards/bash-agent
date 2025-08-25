@@ -160,10 +160,10 @@
           tag = "latest";
           maxLayers = 120;
           contents = baseContents;
-          extraCommands = [
-            "mkdir -p /opt/google/chrome"
-            "ln -s ${lib.getExe pkgs.google-chrome} /opt/google/chrome/chrome"
-          ];
+          extraCommands = ''
+            mkdir -p /opt/google/chrome
+            ln -s ${lib.getExe pkgs.google-chrome} /opt/google/chrome/chrome
+          '';
           config = {
             Entrypoint = [ "${lib.getExe webAgentExecutable}" ];
             WorkingDir = "/app";
