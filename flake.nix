@@ -141,6 +141,13 @@
           google-chrome
         ];
 
+        # Create Chrome at expected Playwright location and then start agentexecutable
+        chromeLayout = pkgs.runCommand "chrome-layout" {} ''
+          mkdir -p $out/opt/google/chrome
+          cp ${lib.getExe pkgs.google-chrome} $out/opt/google/chrome/chrome 
+          chmod +x $out/opt/google/chrome/chrome
+        '';
+
       in
       {
         devShells.default = devshell;
@@ -159,19 +166,7 @@
           name = "webagent";
           tag = "latest";
           maxLayers = 120;
-          contents = baseContents;
-          copyToRoot = pkgs.buildEnv {
-            name = "image-root";
-            paths = [ pkgs.google-chrome ];
-            pathsToLink = [ "/bin" ];
-            postBuild = ''
-              # create /opt/google/chrome
-              mkdir -p /opt/google/chrome
-              # create /opt/google/chrome/chrome
-              ln -sf ${lib.getExe pkgs.google-chrome} /opt/google/chrome/chrome
-            '';
-
-          };
+          contents = baseContents ++ [ chromeLayout ];
           config = {
             Entrypoint = [ "${lib.getExe webAgentExecutable}" ];
             WorkingDir = "/app";
