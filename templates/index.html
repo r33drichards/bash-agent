@@ -2060,19 +2060,26 @@
         }
 
         function displayMcpToolResult(data) {
+            console.log('DEBUG: displayMcpToolResult called with:', data);
+            
             // For sequential thinking and other MCP tools, display as a message
             const messageEl = document.createElement('div');
             messageEl.className = 'message agent';
             
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+            console.log('DEBUG: Timestamp:', time);
             
             // Format the result content nicely
             let content = data.result || '';
+            console.log('DEBUG: Original content:', content);
             
             // Check if this looks like sequential thinking content
             if (content.includes('thought') || content.includes('thinking') || data.tool_use_id?.includes('sequential')) {
                 content = `**🧠 Sequential Thinking:**\n\n${content}`;
+                console.log('DEBUG: Formatted as sequential thinking');
             }
+            
+            console.log('DEBUG: Final content to display:', content);
             
             messageEl.innerHTML = `
                 <div class="message-header">
@@ -2087,9 +2094,11 @@
                 hljs.highlightElement(block);
             });
             
+            console.log('DEBUG: About to append message element to DOM');
             messages.appendChild(messageEl);
             messages.scrollTop = messages.scrollHeight;
             hideTyping();
+            console.log('DEBUG: Message element appended successfully');
         }
 
         function addToolConfirmation(data) {
@@ -2455,6 +2464,7 @@
         });
 
         socket.on('tool_result', function(data) {
+            console.log('DEBUG: tool_result event received:', data);
             displayMcpToolResult(data);
         });
 

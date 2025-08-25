@@ -32,16 +32,16 @@ from tools.github_rag_tools import (
 from github_rag import GitHubRAG
 
 from .session_manager import sessions
+from .mcp_client import get_mcp_client
 
 
 class LLM:
-    def __init__(self, model, session_id=None, mcp_client=None):
+    def __init__(self, model, session_id=None):
         if "ANTHROPIC_API_KEY" not in os.environ:
             raise ValueError("ANTHROPIC_API_KEY environment variable not found.")
         self.client = anthropic.Anthropic()
         self.model = model
         self.session_id = session_id
-        self.mcp_client = mcp_client
         self.messages = []
         self.total_input_tokens = 0
         self.total_output_tokens = 0
@@ -63,10 +63,19 @@ class LLM:
             github_rag_list_tool,
         ]
 
-        # Add MCP tools if MCP client is available
-        if self.mcp_client and self.mcp_client.is_initialized:
-            mcp_tools = self.mcp_client.get_tools_for_anthropic()
-            self.tools.extend(mcp_tools)
+        # Add MCP tools if global MCP client is available
+        self._add_mcp_tools()
+
+    def _add_mcp_tools(self):
+        """Add MCP tools from the global MCP client if available"""
+        try:
+            mcp_client = get_mcp_client()
+            if mcp_client and mcp_client.is_initialized:
+                mcp_tools = mcp_client.get_tools_for_anthropic()
+                self.tools.extend(mcp_tools)
+        except Exception:
+            # Silently ignore errors to avoid breaking initialization
+            pass
 
     def _build_system_prompt(self):
         """Build the system prompt dynamically including RAG repository information."""

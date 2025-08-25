@@ -7,7 +7,7 @@ from flask_socketio import emit, join_room, leave_room
 
 from agent.session_manager import sessions
 from agent.llm import LLM
-from agent.mcp_client import MCPClient, initialize_mcp_client
+from agent.mcp_client import get_mcp_client, initialize_mcp_client
 from agent.message_handler import handle_user_message_processing
 from agent.tool_execution import handle_tool_call_web, execute_tool_call_web
 from agent.conversation import save_conversation_history, load_conversation_history
@@ -25,14 +25,6 @@ def register_socket_events(socketio, app):
         join_room(session_id)
         session["session_id"] = session_id
 
-        # Always initialize MCP client (with default config if none provided)
-        mcp_config_path = app.config.get("MCP_CONFIG")
-        print(f"DEBUG: MCP_CONFIG in app.config: {mcp_config_path}")
-        print(
-            f"DEBUG: Creating MCP client (will use default config if no user config provided)"
-        )
-        mcp_client = MCPClient()
-
         # Initialize session first (without LLM)
         sessions[session_id] = {
             "auto_confirm": app.config["AUTO_CONFIRM"],
@@ -40,26 +32,31 @@ def register_socket_events(socketio, app):
             "conversation_history": [],
             "memory_manager": MemoryManager(),
             "todo_manager": TodoManager(),
-            "mcp_client": mcp_client,
-            "mcp_initialized": False,
         }
 
         # Now initialize LLM with the session context available
         sessions[session_id]["llm"] = LLM(
-            "claude-3-7-sonnet-latest", session_id, mcp_client
+            "claude-3-7-sonnet-latest", session_id
         )
 
-        # Always initialize MCP client (will use default config if no user config)
-        if mcp_client:
+        # Initialize global MCP client if not already done
+        mcp_client = get_mcp_client()
+        if not mcp_client.is_initialized:
             working_dir = app.config.get("WORKING_DIR")
-
-            def run_mcp_init():
-                asyncio.run(initialize_mcp_client(session_id, mcp_config_path, socketio, working_dir))
-
-            # Run MCP initialization in a separate thread
-            mcp_thread = threading.Thread(target=run_mcp_init, daemon=True)
-            mcp_thread.start()
-            print(f"Starting MCP initialization for session {session_id}")
+            mcp_config_path = app.config.get("MCP_CONFIG")
+            
+            # Import get_mcp_loop from tool_execution
+            from agent.tool_execution import get_mcp_loop
+            
+            # Run MCP initialization in the dedicated MCP event loop
+            mcp_loop = get_mcp_loop()
+            asyncio.run_coroutine_threadsafe(
+                initialize_mcp_client(mcp_config_path, socketio, working_dir),
+                mcp_loop
+            )
+            print(f"Starting MCP initialization")
+        else:
+            print(f"MCP client already initialized with {len(mcp_client.servers)} servers")
 
         emit("session_started", {"session_id": session_id})
         emit(

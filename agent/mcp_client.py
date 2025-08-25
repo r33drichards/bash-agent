@@ -5,7 +5,8 @@ from datetime import datetime
 from flask import current_app
 from flask_socketio import emit
 
-from .session_manager import sessions
+# Global MCP client instance
+_mcp_client = None
 
 
 class MCPClient:
@@ -148,35 +149,35 @@ class MCPClient:
 
     async def call_tool(self, tool_name: str, args: dict) -> dict:
         """Call a tool on the appropriate MCP server"""
-        try:
-            # Find the tool and server
-            tool_info = None
-            for tool in self.available_tools:
-                if tool["name"] == tool_name:
-                    tool_info = tool
-                    break
 
-            if not tool_info:
-                return {"error": f"Tool {tool_name} not found"}
+        # Find the tool and server
+        tool_info = None
+        for tool in self.available_tools:
+            if tool["name"] == tool_name:
+                tool_info = tool
+                break
 
-            server_name = tool_info["server_name"]
-            original_name = tool_info["original_name"]
+        if not tool_info:
+            return {"error": f"Tool {tool_name} not found"}
 
-            if server_name not in self.servers:
-                return {"error": f"Server {server_name} not connected"}
+        server_name = tool_info["server_name"]
+        original_name = tool_info["original_name"]
 
-            session = self.servers[server_name]["session"]
-            result = await session.call_tool(original_name, args)
+        if server_name not in self.servers:
+            return {"error": f"Server {server_name} not connected"}
 
-            return {
-                "success": True,
-                "content": result.content
-                if hasattr(result, "content")
-                else str(result),
-            }
+        session = self.servers[server_name]["session"]
+        # calling the tool
+        print(f"DEBUG: Calling MCP tool: {original_name} with args: {args}")
+        result = await session.call_tool(original_name, args)
+        print(f"DEBUG: MCP tool result: {result}")
 
-        except Exception as e:
-            return {"error": f"Error calling tool {tool_name}: {str(e)}"}
+        return {
+            "success": True,
+            "content": result.content
+            if hasattr(result, "content")
+            else str(result),
+        }
 
     def get_tools_for_anthropic(self) -> list:
         """Get tools in the format expected by Anthropic API"""
@@ -196,17 +197,21 @@ class MCPClient:
         await self.exit_stack.aclose()
 
 
-async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None, working_dir=None):
-    """Initialize MCP client for the session"""
+def get_mcp_client():
+    """Get the global MCP client instance"""
+    global _mcp_client
+    if _mcp_client is None:
+        _mcp_client = MCPClient()
+    return _mcp_client
+
+
+async def initialize_mcp_client(mcp_config_path=None, socketio=None, working_dir=None):
+    """Initialize the global MCP client"""
+    global _mcp_client
+    
     try:
-        if session_id not in sessions:
-            return
-
-        session_data = sessions[session_id]
-        mcp_client = session_data.get("mcp_client")
-
-        if not mcp_client:
-            return
+        if _mcp_client is None:
+            _mcp_client = MCPClient()
 
         config_path = mcp_config_path
         # Always try to load config - load_config_and_connect handles None gracefully
@@ -219,22 +224,15 @@ async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None,
         else:
             print("DEBUG: No user MCP config provided, will load default config")
 
-        await mcp_client.load_config_and_connect(config_path, working_dir)
-        sessions[session_id]["mcp_initialized"] = True
-
-        # Update the LLM with MCP tools
-        llm = sessions[session_id]["llm"]
-        if mcp_client.is_initialized:
-            mcp_tools = mcp_client.get_tools_for_anthropic()
-            llm.tools.extend(mcp_tools)
+        await _mcp_client.load_config_and_connect(config_path, working_dir)
 
         # Debug output for MCP tools
         tool_list = [
             f"{tool['name']} ({tool['server_name']})"
-            for tool in mcp_client.available_tools
+            for tool in _mcp_client.available_tools
         ]
         print(f"=== MCP INITIALIZATION DEBUG ===")
-        print(f"Servers connected: {list(mcp_client.servers.keys())}")
+        print(f"Servers connected: {list(_mcp_client.servers.keys())}")
         print(f"Available MCP tools: {tool_list}")
         print(f"================================")
 
@@ -243,10 +241,9 @@ async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None,
                 "message",
                 {
                     "type": "system",
-                    "content": f"MCP client initialized with {len(mcp_client.servers)} servers and {len(mcp_client.available_tools)} tools: {', '.join([tool['name'] for tool in mcp_client.available_tools])}",
+                    "content": f"MCP client initialized with {len(_mcp_client.servers)} servers and {len(_mcp_client.available_tools)} tools: {', '.join([tool['name'] for tool in _mcp_client.available_tools])}",
                     "timestamp": datetime.now().isoformat(),
                 },
-                room=session_id,
             )
 
     except Exception as e:
@@ -258,23 +255,19 @@ async def initialize_mcp_client(session_id, mcp_config_path=None, socketio=None,
                     "content": f"Error initializing MCP client: {str(e)}",
                     "timestamp": datetime.now().isoformat(),
                 },
-                room=session_id,
             )
 
 
-async def handle_mcp_tool_call(session_id, tool_call, socketio_instance=None):
+async def handle_mcp_tool_call(tool_call, socketio_instance=None):
     """Handle MCP tool call asynchronously"""
+    global _mcp_client
+    
     try:
-        if session_id not in sessions:
+        if _mcp_client is None or not _mcp_client.is_initialized:
             return
 
-        session_data = sessions[session_id]
-        mcp_client = session_data.get("mcp_client")
-
-        if not mcp_client:
-            return
-
-        result = await mcp_client.call_tool(tool_call["name"], tool_call["input"])
+        result = await _mcp_client.call_tool(tool_call["name"], tool_call["input"])
+        print(f"DEBUG: MCP tool result: {result}")
 
         if result.get("error"):
             content = result["error"]
@@ -283,6 +276,8 @@ async def handle_mcp_tool_call(session_id, tool_call, socketio_instance=None):
 
         # Use the passed socketio instance if available
         if socketio_instance:
+            print(f"DEBUG: About to emit tool_result for {tool_call['name']}")
+            print(f"DEBUG: Content to emit: {content[:200]}..." if len(str(content)) > 200 else f"DEBUG: Content to emit: {content}")
             socketio_instance.emit(
                 "tool_result",
                 {
@@ -290,18 +285,24 @@ async def handle_mcp_tool_call(session_id, tool_call, socketio_instance=None):
                     "result": content,
                     "timestamp": datetime.now().isoformat(),
                 },
-                room=session_id,
             )
+            print(f"DEBUG: tool_result emitted successfully")
+        else:
+            print(f"DEBUG: No socketio_instance available to emit tool_result")
 
     except Exception as e:
         # Use the passed socketio instance if available
         if socketio_instance:
+            print(f"DEBUG: Emitting error tool_result for {tool_call['name']}: {str(e)}")
             socketio_instance.emit(
                 "tool_result",
                 {
                     "tool_use_id": tool_call["id"],
                     "result": f"Error executing MCP tool: {str(e)}",
                     "timestamp": datetime.now().isoformat(),
-            },
-            room=session_id,
-        )
+                    "tool_call": tool_call,
+                },
+            )
+            print(f"DEBUG: Error tool_result emitted successfully")
+        else:
+            print(f"DEBUG: No socketio_instance available to emit error tool_result")

@@ -1,6 +1,6 @@
-import threading
 import asyncio
 import traceback
+import threading
 from datetime import datetime
 
 from flask_socketio import emit
@@ -24,7 +24,32 @@ from tools.github_rag_tools import (
 )
 
 from .session_manager import sessions
-from .mcp_client import handle_mcp_tool_call
+from .mcp_client import get_mcp_client
+
+# Global MCP event loop
+_mcp_loop = None
+_mcp_thread = None
+
+def get_mcp_loop():
+    """Get or create the MCP event loop"""
+    global _mcp_loop, _mcp_thread
+    
+    if _mcp_loop is None or not _mcp_loop.is_running():
+        # Create a new event loop in a separate thread
+        _mcp_loop = asyncio.new_event_loop()
+        
+        def run_loop():
+            asyncio.set_event_loop(_mcp_loop)
+            _mcp_loop.run_forever()
+        
+        _mcp_thread = threading.Thread(target=run_loop, daemon=True)
+        _mcp_thread.start()
+        
+        # Give the loop a moment to start
+        import time
+        time.sleep(0.1)
+    
+    return _mcp_loop
 
 
 def handle_tool_call_web(tool_call, session_id, auto_confirm, socketio_instance=None):
@@ -79,9 +104,8 @@ def execute_tool_call_web(tool_call, session_id, socketio_instance=None):
 
         # Check if this is an MCP tool and handle async execution
         is_mcp_tool = False
-        if session_id in sessions:
-            session_data = sessions[session_id]
-            mcp_client = session_data.get("mcp_client")
+        try:
+            mcp_client = get_mcp_client()
             if mcp_client and hasattr(mcp_client, "available_tools"):
                 # Check if tool name matches any MCP tool
                 is_mcp_tool = any(
@@ -91,59 +115,85 @@ def execute_tool_call_web(tool_call, session_id, socketio_instance=None):
                 print(
                     f"DEBUG: Tool '{tool_call['name']}' - MCP tool check: {is_mcp_tool}"
                 )
+        except Exception:
+            # Silently ignore errors to avoid breaking tool execution
+            pass
 
-        if is_mcp_tool and session_id in sessions:
-            session_data = sessions[session_id]
-            if session_data.get("mcp_client"):
-                # Initialize MCP client if not done yet
-                if not session_data.get("mcp_initialized"):
-                    result = {
-                        "type": "tool_result",
-                        "tool_use_id": tool_call["id"],
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "MCP client is still initializing. Please try again in a moment.",
-                            }
-                        ],
-                    }
+        if is_mcp_tool:
+            # MCP client is available, try to call the tool synchronously
+            try:
+                # Get MCP client and call tool directly
+                mcp_client = get_mcp_client()
+                
+                # Run MCP tool call in the dedicated MCP event loop
+                mcp_loop = get_mcp_loop()
+                future = asyncio.run_coroutine_threadsafe(
+                    mcp_client.call_tool(tool_call["name"], tool_call["input"]),
+                    mcp_loop
+                )
+                mcp_result = future.result()  # This blocks until the coroutine completes
+                
+                if mcp_result.get("error"):
+                    result_text = mcp_result["error"]
                 else:
-                    # MCP client is initialized, try to call the tool asynchronously
-                    try:
-                        # Run MCP tool call in a separate thread
-                        mcp_tool_thread = threading.Thread(
-                            target=lambda: asyncio.run(handle_mcp_tool_call(session_id, tool_call, socketio_instance)), 
-                            daemon=True
-                        )
-                        mcp_tool_thread.start()
+                    content = mcp_result.get("content", "No result returned")
+                    # Handle different content types from MCP
+                    if isinstance(content, list) and content:
+                        # If content is a list, try to extract text from first item
+                        if hasattr(content[0], 'text'):
+                            result_text = content[0].text
+                        elif isinstance(content[0], dict) and 'text' in content[0]:
+                            result_text = content[0]['text']
+                        else:
+                            result_text = str(content)
+                    else:
+                        result_text = str(content)
 
-                        result = {
-                            "type": "tool_result",
-                            "tool_use_id": tool_call["id"],
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": "MCP tool executed. Results will be emitted separately.",
-                                }
-                            ],
-                        }
-                    except Exception as e:
-                        result = {
-                            "type": "tool_result",
-                            "tool_use_id": tool_call["id"],
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Error executing MCP tool: {str(e)}",
-                                }
-                            ],
-                        }
-            else:
                 result = {
                     "type": "tool_result",
                     "tool_use_id": tool_call["id"],
-                    "content": [{"type": "text", "text": "MCP client not configured"}],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": result_text,
+                        }
+                    ],
                 }
+                
+                # Also emit the result for the frontend
+                if socketio_instance:
+                    socketio_instance.emit(
+                        "tool_result",
+                        {
+                            "tool_use_id": tool_call["id"],
+                            "result": result_text,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
+                    
+            except Exception as e:
+                error_msg = f"Error executing MCP tool: {str(e)}"
+                result = {
+                    "type": "tool_result",
+                    "tool_use_id": tool_call["id"],
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": error_msg,
+                        }
+                    ],
+                }
+                
+                # Also emit the error for the frontend
+                if socketio_instance:
+                    socketio_instance.emit(
+                        "tool_result",
+                        {
+                            "tool_use_id": tool_call["id"],
+                            "result": error_msg,
+                            "timestamp": datetime.now().isoformat(),
+                        },
+                    )
         else:
             # Execute the tool normally
             print(
