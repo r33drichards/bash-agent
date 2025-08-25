@@ -24,9 +24,6 @@
           inputs = inputs;
         };
 
-        playwrightMcp = pkgs.callPackage ./mcp-server-playwright {
-          inherit pkgs;
-        };
 
         # Create a proper derivation for webagent (new)
         webAgentPackage = pkgs.stdenv.mkDerivation {
@@ -86,6 +83,7 @@
             langchain-core
             fpdf
             mcp
+            ps.playwright
           ];
 
         testPythonPackages =
@@ -108,7 +106,6 @@
             inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
             inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
             inputs.nix-mcp-servers.packages.${system}.mcp-server-memory
-            playwrightMcp
           ];
           text = ''
             ${pythonEnv}/bin/python3 ${lib.getExe webAgentPackage} "$@"
@@ -142,15 +139,9 @@
           procps
           cacert
           poetry
-          google-chrome
         ];
 
-        # Create Chrome at expected Playwright location and then start agentexecutable
-        chromeLayout = pkgs.runCommand "chrome-layout" {} ''
-          mkdir -p $out/opt/google/chrome
-          cp ${lib.getExe pkgs.google-chrome} $out/opt/google/chrome/chrome 
-          chmod +x $out/opt/google/chrome/chrome
-        '';
+  
 
       in
       {
