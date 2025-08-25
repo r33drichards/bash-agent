@@ -1,3 +1,0 @@
-This is a test file for uploading.
-It contains multiple lines of text.
-Let's see if the file upload functionality works correctly!

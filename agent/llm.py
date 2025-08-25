@@ -148,19 +148,117 @@ class LLM:
         reraise=True,
     )
     def _call_anthropic(self, stream=False):
-        return self.client.messages.create(
-            model=self.model,
-            max_tokens=64_000,
-            system=self.system_prompt,
-            messages=self.messages,
-            tools=self.tools,
-            stream=stream,
-            timeout=600.0,  # 10 minutes timeout for long operations
-            thinking={
-                "type": "enabled",
-                "budget_tokens": 10000
-            },
-        )
+        try:
+            return self.client.messages.create(
+                model=self.model,
+                max_tokens=64_000,
+                system=self.system_prompt,
+                messages=self.messages,
+                tools=self.tools,
+                stream=stream,
+                timeout=600.0,  # 10 minutes timeout for long operations
+                thinking={
+                    "type": "enabled",
+                    "budget_tokens": 10000
+                },
+            )
+        except anthropic.BadRequestError as e:
+            if "exceed context limit" in str(e):
+                print(f"Context limit exceeded: {e}")
+                # Summarize context and retry
+                self._summarize_and_truncate_context()
+                return self.client.messages.create(
+                    model=self.model,
+                    max_tokens=64_000,
+                    system=self.system_prompt,
+                    messages=self.messages,
+                    tools=self.tools,
+                    stream=stream,
+                    timeout=600.0,
+                    thinking={
+                        "type": "enabled",
+                        "budget_tokens": 10000
+                    },
+                )
+            else:
+                raise
+
+    def _summarize_and_truncate_context(self):
+        """Summarize the conversation history to reduce token usage when context limit is exceeded."""
+        if len(self.messages) <= 2:
+            # Keep at least the first user message and last assistant message
+            return
+        
+        print("Summarizing conversation context to reduce token usage...")
+        
+        # Keep the first user message and last 2 messages (assistant + user)
+        first_message = self.messages[0]
+        recent_messages = self.messages[-2:]  # Last assistant and user messages
+        messages_to_summarize = self.messages[1:-2]  # Everything in between
+        
+        if not messages_to_summarize:
+            return
+        
+        # Extract key information from messages to summarize
+        user_requests = []
+        assistant_responses = []
+        tool_calls_summary = []
+        
+        for msg in messages_to_summarize:
+            if msg.get("role") == "user":
+                # Extract text content from user messages
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            user_requests.append(item.get("text", ""))
+                        elif isinstance(item, dict) and item.get("type") == "tool_result":
+                            # Summarize tool results briefly
+                            tool_name = item.get("tool_name", "unknown")
+                            is_error = item.get("is_error", False)
+                            content_preview = str(item.get("content", ""))[:100] + "..." if len(str(item.get("content", ""))) > 100 else str(item.get("content", ""))
+                            result_summary = f"Tool {tool_name} {'failed' if is_error else 'succeeded'}: {content_preview}"
+                            tool_calls_summary.append(result_summary)
+                        elif isinstance(item, dict) and item.get("type") == "image":
+                            user_requests.append(f"[Image uploaded: {item.get('source', {}).get('media_type', 'unknown')}]")
+            elif msg.get("role") == "assistant":
+                # Extract text and tool use from assistant messages
+                content = msg.get("content", [])
+                if isinstance(content, list):
+                    for item in content:
+                        if isinstance(item, dict):
+                            if item.get("type") == "text":
+                                text = item.get("text", "")
+                                if text.strip():
+                                    assistant_responses.append(text[:200] + "..." if len(text) > 200 else text)
+                            elif item.get("type") == "tool_use":
+                                tool_name = item.get("name", "unknown")
+                                tool_calls_summary.append(f"Called {tool_name}")
+        
+        # Create a concise summary
+        summary_parts = []
+        
+        if user_requests:
+            summary_parts.append(f"User made {len(user_requests)} requests including: " + "; ".join(user_requests[:3]))
+        
+        if tool_calls_summary:
+            summary_parts.append(f"Tools used: {', '.join(set(tool_calls_summary[:10]))}")
+        
+        if assistant_responses:
+            summary_parts.append("Assistant provided responses and assistance")
+        
+        summary_text = "CONVERSATION SUMMARY: " + " | ".join(summary_parts)
+        
+        # Create the summarized message
+        summary_message = {
+            "role": "user",
+            "content": [{"type": "text", "text": summary_text}]
+        }
+        
+        # Replace the middle messages with the summary
+        self.messages = [first_message, summary_message] + recent_messages
+        
+        print(f"Context summarized: reduced from {len(messages_to_summarize) + 3} to {len(self.messages)} messages")
 
     def summarize_image(self, image_data, filename):
         """Summarize an image using a separate LLM call to save tokens."""
