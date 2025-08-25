@@ -24,6 +24,10 @@
           inputs = inputs;
         };
 
+        playwrightMcp = pkgs.callPackage ./mcp-server-playwright {
+          inherit pkgs;
+        };
+
         # Create a proper derivation for webagent (new)
         webAgentPackage = pkgs.stdenv.mkDerivation {
           name = "agent";
@@ -102,9 +106,9 @@
           runtimeInputs = [
             pythonEnv
             inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
-            inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
             inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
             inputs.nix-mcp-servers.packages.${system}.mcp-server-memory
+            playwrightMcp
           ];
           text = ''
             ${pythonEnv}/bin/python3 ${lib.getExe webAgentPackage} "$@"
