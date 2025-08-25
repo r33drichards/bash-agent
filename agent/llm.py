@@ -148,6 +148,10 @@ class LLM:
             tools=self.tools,
             stream=stream,
             timeout=600.0,  # 10 minutes timeout for long operations
+            thinking={
+                "type": "enabled",
+                "budget_tokens": 10000
+            },
         )
 
     def summarize_image(self, image_data, filename):
