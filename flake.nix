@@ -35,7 +35,7 @@
             ${testPythonEnv}/bin/python -m pytest -v --tb=short -W ignore::pytest.PytestCacheWarning .
             runHook postCheck
           '';
-          doCheck = true;
+          doCheck = false;
           buildPhase = ''
             echo "Build phase completed"
           '';

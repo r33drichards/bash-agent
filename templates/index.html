@@ -682,6 +682,49 @@
             word-wrap: break-word;
         }
 
+        .thinking-section {
+            margin-bottom: 12px;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            background-color: #0d1117;
+        }
+
+        .thinking-header {
+            padding: 8px 12px;
+            background-color: #161b22;
+            border-bottom: 1px solid #30363d;
+            border-radius: 6px 6px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 12px;
+            color: #7d8590;
+        }
+
+        .thinking-toggle {
+            background: none;
+            border: 1px solid #30363d;
+            color: #7d8590;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .thinking-toggle:hover {
+            background-color: #30363d;
+            color: #e6edf3;
+        }
+
+        .thinking-content {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: #7d8590;
+            font-style: italic;
+            border-radius: 0 0 6px 6px;
+        }
+
         /* Markdown styling for agent messages */
         .message.agent .message-content h1,
         .message.agent .message-content h2,
@@ -2356,6 +2399,13 @@
                     <strong>${typeLabel}</strong>
                     <span class="timestamp">${time}</span>
                 </div>
+                <div class="thinking-section" style="display: none;">
+                    <div class="thinking-header">
+                        <span>🧠 Sequential Thinking:</span>
+                        <button class="thinking-toggle" onclick="toggleThinking(this)">Hide</button>
+                    </div>
+                    <div class="thinking-content"></div>
+                </div>
                 <div class="message-content">
                     <span class="streaming-cursor">▎</span>
                 </div>
@@ -2368,23 +2418,52 @@
             return messageEl;
         }
         
-        function updateStreamingMessage(element, messageData) {
-            const contentEl = element.querySelector('.message-content');
-            if (contentEl) {
-                // Render as markdown and add cursor
-                const contentHtml = marked.parse(messageData.content);
-                contentEl.innerHTML = contentHtml + '<span class="streaming-cursor">▎</span>';
-                messages.scrollTop = messages.scrollHeight;
+        function updateStreamingMessage(element, messageData, isThinking = false) {
+            if (isThinking && messageData.thinking) {
+                // Update thinking content
+                const thinkingSection = element.querySelector('.thinking-section');
+                const thinkingContent = element.querySelector('.thinking-content');
+                if (thinkingSection && thinkingContent) {
+                    thinkingSection.style.display = 'block';
+                    thinkingContent.innerHTML = marked.parse(messageData.thinking) + '<span class="streaming-cursor">▎</span>';
+                }
+            } else {
+                // Update regular content
+                const contentEl = element.querySelector('.message-content');
+                if (contentEl) {
+                    // Render as markdown and add cursor
+                    const contentHtml = marked.parse(messageData.content);
+                    contentEl.innerHTML = contentHtml + '<span class="streaming-cursor">▎</span>';
+                }
             }
+            messages.scrollTop = messages.scrollHeight;
         }
         
         function finalizeStreamingMessage(element, finalData) {
+            // Remove cursors from both thinking and regular content
+            const thinkingContent = element.querySelector('.thinking-content');
+            if (thinkingContent) {
+                const thinkingHtml = thinkingContent.innerHTML.replace('<span class="streaming-cursor">▎</span>', '');
+                thinkingContent.innerHTML = thinkingHtml;
+            }
+            
             const contentEl = element.querySelector('.message-content');
             if (contentEl) {
                 // Remove cursor and render final content
                 const contentHtml = marked.parse(finalData.content);
                 contentEl.innerHTML = contentHtml;
                 messages.scrollTop = messages.scrollHeight;
+            }
+        }
+
+        function toggleThinking(button) {
+            const thinkingContent = button.closest('.thinking-section').querySelector('.thinking-content');
+            if (thinkingContent.style.display === 'none') {
+                thinkingContent.style.display = 'block';
+                button.textContent = 'Hide';
+            } else {
+                thinkingContent.style.display = 'none';
+                button.textContent = 'Show';
             }
         }
 
@@ -2423,14 +2502,22 @@
                     currentStreamingMessage = {
                         type: 'agent',
                         content: '',
+                        thinking: '',
                         timestamp: data.timestamp
                     };
                     currentStreamingElement = createStreamingMessage(currentStreamingMessage);
                 }
                 
-                // Add chunk to content
-                currentStreamingMessage.content += data.chunk;
-                updateStreamingMessage(currentStreamingElement, currentStreamingMessage);
+                // Handle different stream types
+                if (data.stream_type === 'thinking') {
+                    // Add thinking chunk
+                    currentStreamingMessage.thinking += data.chunk;
+                    updateStreamingMessage(currentStreamingElement, currentStreamingMessage, true);
+                } else {
+                    // Add regular content chunk
+                    currentStreamingMessage.content += data.chunk;
+                    updateStreamingMessage(currentStreamingElement, currentStreamingMessage);
+                }
             }
         });
         

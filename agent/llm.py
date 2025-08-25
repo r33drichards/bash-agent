@@ -9,8 +9,7 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type,
 )
-from flask import current_app
-from flask_socketio import emit
+# Flask imports are conditionally imported where needed to avoid import errors
 
 from tools.bash_tool import bash_tool
 from tools.sqlite_tool import sqlite_tool
@@ -72,9 +71,17 @@ class LLM:
             mcp_client = get_mcp_client()
             if mcp_client and mcp_client.is_initialized:
                 mcp_tools = mcp_client.get_tools_for_anthropic()
-                self.tools.extend(mcp_tools)
-        except Exception:
+                # Check for duplicate tool names before adding
+                existing_tool_names = {tool.get("name") for tool in self.tools}
+                for tool in mcp_tools:
+                    if tool.get("name") not in existing_tool_names:
+                        self.tools.append(tool)
+                        existing_tool_names.add(tool.get("name"))
+                    else:
+                        print(f"DEBUG: Skipping duplicate MCP tool: {tool.get('name')}")
+        except Exception as e:
             # Silently ignore errors to avoid breaking initialization
+            print(f"DEBUG: Error adding MCP tools: {e}")
             pass
 
     def _build_system_prompt(self):
@@ -88,10 +95,11 @@ class LLM:
 
         # Add custom system prompt if configured
         try:
+            from flask import current_app
             if "SYSTEM_PROMPT" in current_app.config and current_app.config["SYSTEM_PROMPT"]:
                 base_prompt += current_app.config["SYSTEM_PROMPT"]
-        except RuntimeError:
-            # Working outside of application context, skip Flask config
+        except (RuntimeError, ImportError):
+            # Working outside of application context or Flask not available, skip Flask config
             pass
 
         print("SYSTEM PROMPT:", base_prompt)
@@ -218,11 +226,11 @@ class LLM:
             return f"[Image: {filename} - Could not generate summary: {str(e)}]"
 
     def _call_with_streaming(self, stream_callback):
-        """Handle streaming responses."""
+        """Handle streaming responses with proper thinking block handling."""
         print("Starting streaming response...")
 
-        response_text = ""
-        tool_calls = []
+        content_blocks = []
+        current_block = None
         input_tokens = 0
         output_tokens = 0
 
@@ -233,40 +241,49 @@ class LLM:
                         input_tokens = event.message.usage.input_tokens
 
                     elif event.type == "content_block_start":
-                        if event.content_block.type == "text":
-                            pass  # Text block starting
+                        # Start a new content block
+                        current_block = {"type": event.content_block.type}
+                        
+                        if event.content_block.type == "thinking":
+                            current_block["thinking"] = ""
+                        elif event.content_block.type == "text":
+                            current_block["text"] = ""
                         elif event.content_block.type == "tool_use":
-                            tool_calls.append(
-                                {
-                                    "id": event.content_block.id,
-                                    "name": event.content_block.name,
-                                    "input": event.content_block.input,
-                                }
-                            )
+                            current_block.update({
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input": event.content_block.input
+                            })
 
                     elif event.type == "content_block_delta":
-                        if event.delta.type == "text_delta":
-                            chunk = event.delta.text
-                            response_text += chunk
-                            # Stream to callback
+                        if current_block and event.delta.type == "thinking_delta":
+                            current_block["thinking"] += event.delta.thinking
+                            # Stream thinking content to callback
                             if stream_callback:
-                                stream_callback(chunk, "content")
-                        elif event.delta.type == "input_json_delta":
-                            # Tool input is being streamed
-                            pass
+                                stream_callback(event.delta.thinking, "thinking")
+                        elif current_block and event.delta.type == "text_delta":
+                            current_block["text"] += event.delta.text
+                            # Stream regular content to callback
+                            if stream_callback:
+                                stream_callback(event.delta.text, "content")
+                        elif event.delta.type == "signature_delta":
+                            # Add signature to thinking block
+                            if current_block and current_block.get("type") == "thinking":
+                                current_block["signature"] = event.delta.signature
+
+                    elif event.type == "content_block_stop":
+                        # Finalize the current block and add it to content_blocks
+                        if current_block:
+                            content_blocks.append(current_block)
+                            current_block = None
 
                     elif event.type == "message_delta":
                         if hasattr(event.delta, "stop_reason"):
                             print(f"Stream finished: {event.delta.stop_reason}")
 
                     elif event.type == "message_stop":
-                        # Handle different API versions - some have usage directly on event
                         if hasattr(event, "usage") and event.usage:
                             output_tokens = event.usage.output_tokens
-                        elif hasattr(event, "message") and hasattr(
-                            event.message, "usage"
-                        ):
-                            output_tokens = event.message.usage.output_tokens
 
         except Exception as e:
             print(f"Streaming error: {e}")
@@ -281,6 +298,7 @@ class LLM:
         if stream_callback:
             try:
                 from flask import session as flask_session
+                from flask_socketio import emit
 
                 session_id = flask_session.get("session_id")
                 if session_id:
@@ -296,12 +314,11 @@ class LLM:
                         },
                         room=session_id,
                     )
-            except:
+            except Exception:
                 # Ignore if not in web context or Flask context unavailable
                 pass
 
-        # Return response text and tool calls
-        return response_text, tool_calls
+        return content_blocks
 
     def _remove_cache_control(self):
         """Safely remove cache_control from the user message."""
@@ -322,169 +339,11 @@ class LLM:
                         and "cache_control" in last_content
                     ):
                         del last_content["cache_control"]
-                        print(f"DEBUG: Removed cache_control from user message")
+                        print("DEBUG: Removed cache_control from user message")
                 break
 
-    def _validate_message_structure(self, skip_active_tools=True):
-        """Validate message structure to prevent orphaned tool_result blocks.
 
-        Args:
-            skip_active_tools: If True, skip validation if there are recent tool_use blocks
-                              that may still be waiting for results.
-        """
-        if not self.messages:
-            return
-
-        print(f"DEBUG: Validating message structure with {len(self.messages)} messages")
-
-        # If skip_active_tools is True, check for recent tool_use blocks without results
-        if skip_active_tools and len(self.messages) >= 2:
-            last_message = self.messages[-1]
-            if last_message.get("role") == "assistant" and isinstance(
-                last_message.get("content"), list
-            ):
-                # Check if last assistant message has tool_use blocks
-                has_tool_use = any(
-                    (isinstance(c, dict) and c.get("type") == "tool_use")
-                    or (hasattr(c, "type") and c.type == "tool_use")
-                    for c in last_message["content"]
-                )
-                if has_tool_use:
-                    print(
-                        "DEBUG: Skipping validation - recent tool_use blocks may still be active"
-                    )
-                    return
-
-        # Print all messages for debugging
-        for i, msg in enumerate(self.messages):
-            print(
-                f"DEBUG: Message {i}: role={msg.get('role')}, content_type={type(msg.get('content'))}"
-            )
-            if isinstance(msg.get("content"), list):
-                for j, content in enumerate(msg["content"]):
-                    content_type = (
-                        content.get("type")
-                        if isinstance(content, dict)
-                        else getattr(content, "type", "unknown")
-                    )
-                    if content_type == "tool_use":
-                        tool_id = (
-                            content.get("id")
-                            if isinstance(content, dict)
-                            else getattr(content, "id", "unknown")
-                        )
-                        print(
-                            f"DEBUG:   Content {j}: {content_type} with ID: {tool_id}"
-                        )
-                    elif content_type == "tool_result":
-                        tool_use_id = (
-                            content.get("tool_use_id")
-                            if isinstance(content, dict)
-                            else getattr(content, "tool_use_id", "unknown")
-                        )
-                        print(
-                            f"DEBUG:   Content {j}: {content_type} with tool_use_id: {tool_use_id}"
-                        )
-                    else:
-                        print(f"DEBUG:   Content {j}: {content_type}")
-
-        # Check for orphaned tool_result blocks
-        for i, message in enumerate(self.messages):
-            if message.get("role") == "user" and isinstance(
-                message.get("content"), list
-            ):
-                tool_results = [
-                    c for c in message["content"] if c.get("type") == "tool_result"
-                ]
-                if tool_results:
-                    print(
-                        f"DEBUG: Found {len(tool_results)} tool_result blocks in message {i}"
-                    )
-
-                    # Look for corresponding tool_use blocks in previous assistant messages
-                    tool_use_ids = set()
-
-                    # Search backwards for the most recent assistant message with tool_use blocks
-                    for j in range(i - 1, -1, -1):
-                        prev_message = self.messages[j]
-                        print(
-                            f"DEBUG: Checking message {j}: role={prev_message.get('role')}"
-                        )
-
-                        if prev_message.get("role") == "assistant":
-                            prev_content = prev_message.get("content", [])
-                            print(
-                                f"DEBUG: Assistant message content type: {type(prev_content)}"
-                            )
-                            if isinstance(prev_content, list):
-                                for c in prev_content:
-                                    if hasattr(c, "type") and c.type == "tool_use":
-                                        tool_id = getattr(c, "id", None)
-                                        if tool_id:
-                                            tool_use_ids.add(tool_id)
-                                            print(
-                                                f"DEBUG: Found tool_use with ID: {tool_id}"
-                                            )
-                                    elif (
-                                        isinstance(c, dict)
-                                        and c.get("type") == "tool_use"
-                                    ):
-                                        tool_id = c.get("id")
-                                        if tool_id:
-                                            tool_use_ids.add(tool_id)
-                                            print(
-                                                f"DEBUG: Found tool_use with ID: {tool_id}"
-                                            )
-                            break  # Stop at first assistant message found
-
-                    print(f"DEBUG: All valid tool_use IDs found: {tool_use_ids}")
-
-                    # If no tool_use blocks found, remove ALL tool_result blocks
-                    if not tool_use_ids:
-                        print(
-                            f"DEBUG: No tool_use blocks found - removing ALL {len(tool_results)} tool_result blocks"
-                        )
-                        original_count = len(message["content"])
-                        valid_content = []
-                        removed_count = 0
-                        for content_block in message["content"]:
-                            if content_block.get("type") == "tool_result":
-                                print(
-                                    f"DEBUG: Removing orphaned tool_result with ID: {content_block.get('tool_use_id')}"
-                                )
-                                removed_count += 1
-                                continue
-                            valid_content.append(content_block)
-                        message["content"] = valid_content
-                        print(
-                            f"DEBUG: Removed {removed_count} orphaned tool_results. Content blocks: {original_count} -> {len(valid_content)}"
-                        )
-                    else:
-                        # Remove only orphaned tool_results
-                        original_count = len(message["content"])
-                        valid_content = []
-                        removed_count = 0
-                        for content_block in message["content"]:
-                            if content_block.get("type") == "tool_result":
-                                tool_result_id = content_block.get("tool_use_id")
-                                print(
-                                    f"DEBUG: Checking tool_result with ID: {tool_result_id}"
-                                )
-                                if tool_result_id not in tool_use_ids:
-                                    print(
-                                        f"DEBUG: Removing orphaned tool_result with ID: {tool_result_id}"
-                                    )
-                                    removed_count += 1
-                                    continue
-                                else:
-                                    print(
-                                        f"DEBUG: Keeping valid tool_result with ID: {tool_result_id}"
-                                    )
-                            valid_content.append(content_block)
-                        message["content"] = valid_content
-                        print(
-                            f"DEBUG: Removed {removed_count} orphaned tool_results. Content blocks: {original_count} -> {len(valid_content)}"
-                        )
+            
 
     def __call__(self, content, stream_callback=None):
         """Main call method with optional streaming support."""
@@ -504,6 +363,18 @@ class LLM:
                 )
                 print(f"DEBUG:     tool_use_id: {tool_use_id}")
 
+        # Debug: Print current message history before adding new message
+        print(f"DEBUG: Current message count before adding: {len(self.messages)}")
+        if self.messages:
+            last_msg = self.messages[-1]
+            print(f"DEBUG: Last message role: {last_msg.get('role')}")
+            if last_msg.get('role') == 'assistant' and isinstance(last_msg.get('content'), list) and last_msg['content']:
+                first_content = last_msg['content'][0]
+                if isinstance(first_content, dict):
+                    print(f"DEBUG: Last assistant message first content type: {first_content.get('type')}")
+                else:
+                    print(f"DEBUG: Last assistant message first content type: {getattr(first_content, 'type', 'unknown')}")
+
         self.messages.append({"role": "user", "content": content})
 
         # Add cache control to the last content item if it exists
@@ -511,34 +382,32 @@ class LLM:
         if user_message.get("content") and len(user_message["content"]) > 0:
             user_message["content"][-1]["cache_control"] = {"type": "ephemeral"}
 
+        # Debug: Print the current messages structure before API call
+        print(f"DEBUG: About to send {len(self.messages)} messages to API")
+        for i, msg in enumerate(self.messages):
+            print(f"DEBUG: Message {i}: role={msg.get('role')}")
+            if isinstance(msg.get('content'), list):
+                for j, content in enumerate(msg['content']):
+                    if isinstance(content, dict):
+                        content_type = content.get('type')
+                        print(f"DEBUG:   Content {j}: type={content_type}")
+                        if content_type == 'thinking':
+                            text_preview = content.get('text', '')[:50] + '...' if len(content.get('text', '')) > 50 else content.get('text', '')
+                            print(f"DEBUG:     Thinking text preview: '{text_preview}'")
+
         # Note: Message validation is moved to after tool execution to prevent interference
         # with active tool calls that haven't received results yet
+
+        # When thinking is enabled, we need to ensure conversation history compliance
 
         try:
             # Use streaming if callback provided
             if stream_callback:
-                # Get response from streaming
-                response_text, tool_calls = self._call_with_streaming(stream_callback)
+                # Get content blocks from streaming
+                content_blocks = self._call_with_streaming(stream_callback)
 
                 # Build assistant message for streaming response
-                assistant_response = {"role": "assistant", "content": []}
-
-                # Add text content if any
-                if response_text:
-                    assistant_response["content"].append(
-                        {"type": "text", "text": response_text}
-                    )
-
-                # Add tool_use blocks
-                for tool_call in tool_calls:
-                    # Create a proper tool_use content block as a dict
-                    tool_use_block = {
-                        "type": "tool_use",
-                        "id": tool_call["id"],
-                        "name": tool_call["name"],
-                        "input": tool_call["input"],
-                    }
-                    assistant_response["content"].append(tool_use_block)
+                assistant_response = {"role": "assistant", "content": content_blocks}
 
                 # Append assistant message to conversation history
                 print(
@@ -550,7 +419,20 @@ class LLM:
                 # Clean up cache control from user message
                 self._remove_cache_control()
 
-                # Return the expected format
+                # Extract response text and tool calls for return format
+                response_text = ""
+                tool_calls = []
+                
+                for block in content_blocks:
+                    if block.get("type") == "text":
+                        response_text += block.get("text", "")
+                    elif block.get("type") == "tool_use":
+                        tool_calls.append({
+                            "id": block.get("id"),
+                            "name": block.get("name"), 
+                            "input": block.get("input")
+                        })
+
                 return response_text, tool_calls
             else:
                 response = self._call_anthropic()
@@ -570,6 +452,7 @@ class LLM:
             # Emit token usage update to web client
             try:
                 from flask import session as flask_session
+                from flask_socketio import emit
 
                 session_id = flask_session.get("session_id")
                 if session_id:
@@ -585,55 +468,61 @@ class LLM:
                         },
                         room=session_id,
                     )
-            except:
+            except Exception:
                 # Ignore if not in web context or Flask context unavailable
                 pass
 
-        assistant_response = {"role": "assistant", "content": []}
+        # Convert API response content blocks to dict format
+        content_blocks = []
         tool_calls = []
         output_text = ""
 
-        for content in response.content:
-            if content.type == "text":
-                text_content = content.text
-                output_text += text_content
-                assistant_response["content"].append(
-                    {"type": "text", "text": text_content}
-                )
-                print(
-                    f"DEBUG: Adding text content to assistant response: {len(text_content)} chars"
-                )
+        print(f"DEBUG: Processing response with {len(response.content)} content blocks")
+        for idx, content in enumerate(response.content):
+            print(f"DEBUG: Response content[{idx}] type: {content.type}")
+            
+            if content.type == "thinking":
+                # Create thinking block dict with signature if present
+                thinking_block = {"type": "thinking", "thinking": content.thinking}
+                if hasattr(content, 'signature') and content.signature:
+                    thinking_block["signature"] = content.signature
+                content_blocks.append(thinking_block)
+                print(f"DEBUG: Added thinking block: {len(content.thinking)} chars")
+                
+            elif content.type == "redacted_thinking":
+                # Create redacted thinking block dict
+                redacted_block = {"type": "redacted_thinking"}
+                if hasattr(content, 'data') and content.data:
+                    redacted_block["data"] = content.data
+                content_blocks.append(redacted_block)
+                print("DEBUG: Added redacted thinking block")
+                
+            elif content.type == "text":
+                text_block = {"type": "text", "text": content.text}
+                content_blocks.append(text_block)
+                output_text += content.text
+                print(f"DEBUG: Added text block: {len(content.text)} chars")
+                
             elif content.type == "tool_use":
-                assistant_response["content"].append(content)
-                tool_calls.append(
-                    {"id": content.id, "name": content.name, "input": content.input}
-                )
-                print(
-                    f"DEBUG: Adding tool_use to assistant response: {content.name} with ID: {content.id}"
-                )
+                tool_use_block = {
+                    "type": "tool_use",
+                    "id": content.id,
+                    "name": content.name,
+                    "input": content.input
+                }
+                content_blocks.append(tool_use_block)
+                tool_calls.append({
+                    "id": content.id,
+                    "name": content.name, 
+                    "input": content.input
+                })
+                print(f"DEBUG: Added tool_use block: {content.name}")
 
-        print(
-            f"DEBUG: Appending assistant response to messages. Total messages before: {len(self.messages)}"
-        )
-        print(
-            f"DEBUG: Assistant response content blocks: {len(assistant_response['content'])}"
-        )
-        for i, content in enumerate(assistant_response["content"]):
-            content_type = (
-                content.get("type")
-                if isinstance(content, dict)
-                else getattr(content, "type", "unknown")
-            )
-            print(f"DEBUG:   Assistant content {i}: {content_type}")
+        # Create assistant message with converted content blocks
+        assistant_response = {"role": "assistant", "content": content_blocks}
 
+        print(f"DEBUG: Appending assistant response with {len(content_blocks)} blocks")
         self.messages.append(assistant_response)
-        print(
-            f"DEBUG: Total messages after adding assistant response: {len(self.messages)}"
-        )
-
-        # Validate message structure after assistant response is added, but only if no tools were called
-        # (tool results will be added later and we don't want to interfere)
-        if not tool_calls:
-            self._validate_message_structure(skip_active_tools=False)
+        print(f"DEBUG: Total messages after: {len(self.messages)}")
 
         return output_text, tool_calls
