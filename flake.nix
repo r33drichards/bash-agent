@@ -99,7 +99,7 @@
         # Web agent executable using writeShellApplication
         webAgentExecutable = pkgs.writeShellApplication {
           name = "webagent";
-          runtimeInputs = [ 
+          runtimeInputs = [
             pythonEnv
             inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
             inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
@@ -163,7 +163,14 @@
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
             paths = [ pkgs.google-chrome ];
-            pathsToLink = [ "/opt/google/chrome" ];
+            pathsToLink = [ "/bin" ];
+            postBuild = ''
+              # create /opt/google/chrome
+              mkdir -p /opt/google/chrome
+              # create /opt/google/chrome/chrome
+              ln -sf ${lib.getExe pkgs.google-chrome} /opt/google/chrome/chrome
+            '';
+
           };
           config = {
             Entrypoint = [ "${lib.getExe webAgentExecutable}" ];
@@ -171,7 +178,12 @@
             User = "1000:1000";
             Env = [
               "PYTHONUNBUFFERED=1"
-              "LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.glibc ]}"
+              "LD_LIBRARY_PATH=${
+                pkgs.lib.makeLibraryPath [
+                  pkgs.stdenv.cc.cc.lib
+                  pkgs.glibc
+                ]
+              }"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "GIT_SSL_CAINFO=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
