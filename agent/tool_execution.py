@@ -177,6 +177,15 @@ def execute_tool_call_web(tool_call, session_id, socketio_instance=None):
                                 result_text = f"[Screenshot captured]\n\n{summary}"
                                 if text_content:
                                     result_text = f"{text_content}\n\n{result_text}"
+                                
+                                # Display image to user (not included in LLM history)
+                                if socketio:
+                                    socketio.emit("screenshot_display", {
+                                        "type": "image",
+                                        "data": image_data,
+                                        "filename": filename,
+                                        "timestamp": datetime.now().isoformat()
+                                    }, room=session_id)
                             else:
                                 result_text = "[Screenshot captured - image data received but summarization not available]"
                         else:
