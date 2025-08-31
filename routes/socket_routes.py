@@ -34,12 +34,7 @@ def register_socket_events(socketio, app):
             "todo_manager": TodoManager(),
         }
 
-        # Now initialize LLM with the session context available
-        sessions[session_id]["llm"] = LLM(
-            "claude-3-7-sonnet-latest", session_id
-        )
-
-        # Initialize global MCP client if not already done
+        # Initialize global MCP client first if not already done
         mcp_client = get_mcp_client()
         if not mcp_client.is_initialized:
             working_dir = app.config.get("WORKING_DIR")
@@ -50,13 +45,27 @@ def register_socket_events(socketio, app):
             
             # Run MCP initialization in the dedicated MCP event loop
             mcp_loop = get_mcp_loop()
-            asyncio.run_coroutine_threadsafe(
+            future = asyncio.run_coroutine_threadsafe(
                 initialize_mcp_client(mcp_config_path, socketio, working_dir),
                 mcp_loop
             )
-            print(f"Starting MCP initialization")
+            
+            # Wait for MCP initialization to complete before creating LLM
+            try:
+                # Wait up to 10 seconds for MCP initialization
+                future.result(timeout=10)
+                print(f"MCP initialization completed")
+            except asyncio.TimeoutError:
+                print(f"Warning: MCP initialization timed out, continuing without MCP tools")
+            except Exception as e:
+                print(f"Warning: MCP initialization failed: {e}")
         else:
             print(f"MCP client already initialized with {len(mcp_client.servers)} servers")
+
+        # Now initialize LLM with the session context available (MCP tools will be included if available)
+        sessions[session_id]["llm"] = LLM(
+            "claude-3-7-sonnet-latest", session_id
+        )
 
         emit("session_started", {"session_id": session_id})
         emit(
