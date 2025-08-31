@@ -47,7 +47,12 @@ class MCPClient:
                         "command": "mcp-server-filesystem",
                         "args": [filesystem_dir],
                     },
-                    "playwright": {"command": "mcp-server-playwright"},
+                    "playwright": {
+                        "command": "mcp-server-playwright"
+                        "args": [
+                            "--headless"
+                        ]
+                    },
                     "sequentialthinking": {"command": "mcp-server-sequential-thinking"},
                     "memory": {"command": "mcp-server-memory"},
                 }
