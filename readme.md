@@ -21,6 +21,11 @@ export ANTHROPIC_API_KEY=your-anthropic-key
 nix run github:r33drichards/bash-agent#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta
 ```
 
+running it locally 
+```
+nix run .#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta --mcp example-mcp-config.json
+```
+
 ### What It Does
 
 The agent launches an interactive loop where you can give it instructions. It has access to several tools:

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Code Agent</title>
+    <title id="page-title">Claude Code Agent</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
@@ -49,6 +49,22 @@
             font-size: 16px;
             font-weight: 600;
             color: #f0f6fc;
+            cursor: pointer;
+        }
+        
+        .title:hover {
+            color: #58a6ff;
+        }
+        
+        .title-input {
+            font-size: 16px;
+            font-weight: 600;
+            color: #f0f6fc;
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 4px 8px;
+            width: 300px;
         }
 
         .status {
@@ -1254,7 +1270,7 @@
 </head>
 <body>
     <div class="header">
-        <div class="title">Claude Code Agent</div>
+        <div class="title" id="app-title">Claude Code Agent</div>
         <div class="controls">
             <div class="token-counter" id="token-counter">
                 <div class="token-label">TOKENS</div>
@@ -1388,6 +1404,8 @@
         const historyOverlay = document.getElementById('history-overlay');
         const historyClose = document.getElementById('history-close');
         const historyContent = document.getElementById('history-content');
+        const appTitle = document.getElementById('app-title');
+        const pageTitle = document.getElementById('page-title');
 
         let isConnected = false;
         let isTyping = false;
@@ -1399,6 +1417,51 @@
         let currentOutputTokens = 0;
         let pond = null;
         let attachedFileContents = [];
+        let isEditingTitle = false;
+        
+        // Make title editable
+        appTitle.addEventListener('click', function() {
+            if (!isEditingTitle) {
+                isEditingTitle = true;
+                const currentTitle = appTitle.textContent;
+                appTitle.innerHTML = '';
+                
+                const inputEl = document.createElement('input');
+                inputEl.type = 'text';
+                inputEl.className = 'title-input';
+                inputEl.value = currentTitle;
+                inputEl.addEventListener('blur', updateTitle);
+                inputEl.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        updateTitle();
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelTitleEdit(currentTitle);
+                    }
+                });
+                
+                appTitle.appendChild(inputEl);
+                inputEl.focus();
+                inputEl.select();
+            }
+        });
+        
+        function updateTitle() {
+            const input = document.querySelector('.title-input');
+            if (input) {
+                const newTitle = input.value.trim() || 'Claude Code Agent';
+                appTitle.innerHTML = newTitle;
+                pageTitle.textContent = newTitle;  // Update tab title too
+                isEditingTitle = false;
+            }
+        }
+        
+        function cancelTitleEdit(originalTitle) {
+            appTitle.innerHTML = originalTitle;
+            isEditingTitle = false;
+        }
+        
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
             this.style.height = 'auto';
