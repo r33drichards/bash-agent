@@ -72,7 +72,7 @@ def register_socket_events(socketio, app):
             "message",
             {
                 "type": "system",
-                "content": "Connected to Claude Code Agent. Type your message to start... Initializing MCP servers...",
+                "content": f"Connected to {app.config.get('TITLE', 'Claude Code Agent')}. Type your message to start... Initializing MCP servers...",
                 "timestamp": datetime.now().isoformat(),
             },
         )

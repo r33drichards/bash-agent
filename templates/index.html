@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title id="page-title">Claude Code Agent</title>
+    <title id="page-title">{{ title }}</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
@@ -1428,7 +1428,7 @@
 </head>
 <body>
     <div class="header">
-        <div class="title" id="app-title">Claude Code Agent</div>
+        <div class="title" id="app-title">{{ title }}</div>
         <div class="controls">
             <div class="token-counter" id="token-counter">
                 <div class="token-label">TOKENS</div>
@@ -1651,7 +1651,7 @@
         function updateTitle() {
             const input = document.querySelector('.title-input');
             if (input) {
-                const newTitle = input.value.trim() || 'Claude Code Agent';
+                const newTitle = input.value.trim() || '{{ title }}';
                 appTitle.innerHTML = newTitle;
                 pageTitle.textContent = newTitle;  // Update tab title too
                 isEditingTitle = false;

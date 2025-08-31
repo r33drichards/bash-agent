@@ -39,6 +39,9 @@ def main():
     parser.add_argument(
         "--mcp", type=str, default=None, help="Path to MCP configuration JSON file"
     )
+    parser.add_argument(
+        "--title", type=str, default="Claude Code Agent", help="Title for the browser tab"
+    )
     args = parser.parse_args()
 
     # Store the original working directory BEFORE any changes
@@ -61,6 +64,7 @@ def main():
         "METADATA_DIR": args.metadata_dir,
         "SYSTEM_PROMPT": args.system_prompt,
         "MCP_CONFIG": mcp_config_path,
+        "TITLE": args.title,
     }
 
     # Change working directory if specified
