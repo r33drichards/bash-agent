@@ -1,7 +1,10 @@
 {
   "mcpServers": {
     "playwright": {
-      "command": "mcp-server-playwright"
+      "command": "mcp-server-playwright",
+      "args": [
+        "--headless"
+      ]
     },
     "sequentialthinking": {
       "command": "mcp-server-sequential-thinking"

@@ -106,6 +106,7 @@
             inputs.nix-mcp-servers.packages.${system}.mcp-server-filesystem
             inputs.nix-mcp-servers.packages.${system}.mcp-server-sequentialthinking
             inputs.nix-mcp-servers.packages.${system}.mcp-server-memory
+            inputs.nix-mcp-servers.packages.${system}.mcp-server-playwright
           ];
           text = ''
             ${pythonEnv}/bin/python3 ${lib.getExe webAgentPackage} "$@"

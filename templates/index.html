@@ -12,6 +12,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     
+    <!-- Monaco Editor -->
+    <link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    
     <!-- FilePond CSS -->
     <link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet">
     <link href="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css" rel="stylesheet">
@@ -850,12 +854,17 @@
             gap: 12px;
         }
 
-        .input-field {
+        .input-field-wrapper {
             flex: 1;
+            position: relative;
+        }
+
+        .input-field {
+            width: 100%;
             background-color: #0d1117;
             border: 1px solid #21262d;
             color: #e6edf3;
-            padding: 12px 16px;
+            padding: 12px 42px 12px 16px;
             font-size: 14px;
             font-family: inherit;
             border-radius: 6px;
@@ -1249,6 +1258,144 @@
             51%, 100% { opacity: 0; }
         }
 
+        /* Fullscreen Monaco Editor Styles */
+        .monaco-fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #0d1117;
+            z-index: 10000;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .monaco-fullscreen-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .monaco-fullscreen-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1e1e1e;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .monaco-fullscreen-header {
+            background-color: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .monaco-fullscreen-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f0f6fc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .monaco-fullscreen-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .monaco-close-btn {
+            background: none;
+            border: none;
+            color: #7d8590;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .monaco-close-btn:hover {
+            color: #e6edf3;
+            background-color: #21262d;
+        }
+
+        .monaco-send-btn {
+            background-color: #238636;
+            color: white;
+            border: none;
+            padding: 6px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .monaco-send-btn:hover {
+            background-color: #2ea043;
+        }
+
+        .monaco-editor-wrapper {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .fullscreen-toggle-btn {
+            background: none;
+            border: none;
+            color: #7d8590;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: absolute;
+            right: 8px;
+            bottom: 10px;
+            z-index: 10;
+            height: 24px;
+            width: 24px;
+        }
+
+        .fullscreen-toggle-btn:hover {
+            color: #e6edf3;
+            background-color: rgba(48, 54, 61, 0.8);
+        }
+
+        .fullscreen-toggle-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .monaco-shortcuts-hint {
+            font-size: 11px;
+            color: #7d8590;
+            margin-left: auto;
+            margin-right: 12px;
+        }
+
         @media (max-width: 768px) {
             .header {
                 padding: 8px 16px;
@@ -1378,15 +1525,53 @@
             </div>
             
             <div class="input-container">
-                <textarea 
-                    class="input-field" 
-                    id="message-input" 
-                    placeholder="Type your message here... (Paste images with Cmd/Ctrl+V)"
-                    rows="1"
-                ></textarea>
+                <div class="input-field-wrapper">
+                    <textarea 
+                        class="input-field" 
+                        id="message-input" 
+                        placeholder="Type your message here... (Paste images with Cmd/Ctrl+V)"
+                        rows="1"
+                    ></textarea>
+                    <button class="fullscreen-toggle-btn" id="fullscreen-toggle" title="Open fullscreen editor (Alt+Enter)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                        </svg>
+                    </button>
+                </div>
                 <button class="send-button" id="file-upload-button" style="margin-right: 8px;">📁</button>
                 <button class="send-button" id="send-button">Send</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Monaco Editor Overlay -->
+    <div class="monaco-fullscreen-overlay" id="monaco-fullscreen-overlay">
+        <div class="monaco-fullscreen-container">
+            <div class="monaco-fullscreen-header">
+                <div class="monaco-fullscreen-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    Enhanced Message Editor
+                </div>
+                <div class="monaco-shortcuts-hint">
+                    Press ESC to close • Ctrl/Cmd+Enter to send
+                </div>
+                <div class="monaco-fullscreen-actions">
+                    <button class="monaco-send-btn" id="monaco-send-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                        Send
+                    </button>
+                    <button class="monaco-close-btn" id="monaco-close-btn" title="Close (ESC)">
+                        ×
+                    </button>
+                </div>
+            </div>
+            <div class="monaco-editor-wrapper" id="monaco-editor-container"></div>
         </div>
     </div>
 
@@ -1418,6 +1603,11 @@
         let pond = null;
         let attachedFileContents = [];
         let isEditingTitle = false;
+        let monacoEditor = null;
+        let isMonacoFullscreen = false;
+        
+        // Initialize Monaco Editor loader
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
         
         // Make title editable
         appTitle.addEventListener('click', function() {
@@ -1461,6 +1651,136 @@
             appTitle.innerHTML = originalTitle;
             isEditingTitle = false;
         }
+        
+        // Fullscreen Monaco Editor functionality
+        const fullscreenToggle = document.getElementById('fullscreen-toggle');
+        const monacoOverlay = document.getElementById('monaco-fullscreen-overlay');
+        const monacoCloseBtn = document.getElementById('monaco-close-btn');
+        const monacoSendBtn = document.getElementById('monaco-send-btn');
+        const monacoContainer = document.getElementById('monaco-editor-container');
+        
+        function openMonacoFullscreen() {
+            if (isMonacoFullscreen) return;
+            
+            isMonacoFullscreen = true;
+            monacoOverlay.style.display = 'block';
+            
+            // Small delay for CSS transition
+            setTimeout(() => {
+                monacoOverlay.classList.add('active');
+            }, 10);
+            
+            // Initialize Monaco Editor if not already done
+            if (!monacoEditor) {
+                require(['vs/editor/editor.main'], function() {
+                    monacoEditor = monaco.editor.create(monacoContainer, {
+                        value: messageInput.value || '',
+                        language: 'markdown',
+                        theme: 'vs-dark',
+                        fontSize: 14,
+                        fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace",
+                        minimap: {
+                            enabled: false
+                        },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        wrappingStrategy: 'advanced',
+                        lineNumbers: 'off',
+                        glyphMargin: false,
+                        folding: false,
+                        lineDecorationsWidth: 0,
+                        lineNumbersMinChars: 0,
+                        renderLineHighlight: 'all',
+                        scrollbar: {
+                            vertical: 'auto',
+                            horizontal: 'hidden',
+                            verticalScrollbarSize: 10
+                        },
+                        overviewRulerLanes: 0,
+                        hideCursorInOverviewRuler: true,
+                        overviewRulerBorder: false,
+                        automaticLayout: true,
+                        padding: {
+                            top: 16,
+                            bottom: 16
+                        },
+                        suggest: {
+                            showWords: true,
+                            showSnippets: false
+                        }
+                    });
+                    
+                    // Add keyboard shortcuts
+                    monacoEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function() {
+                        sendFromMonaco();
+                    });
+                    
+                    monacoEditor.addCommand(monaco.KeyCode.Escape, function() {
+                        closeMonacoFullscreen();
+                    });
+                    
+                    // Focus the editor
+                    monacoEditor.focus();
+                });
+            } else {
+                // Update value and focus
+                monacoEditor.setValue(messageInput.value || '');
+                monacoEditor.focus();
+                
+                // Move cursor to end
+                const model = monacoEditor.getModel();
+                const lastLine = model.getLineCount();
+                const lastColumn = model.getLineMaxColumn(lastLine);
+                monacoEditor.setPosition({ lineNumber: lastLine, column: lastColumn });
+            }
+        }
+        
+        function closeMonacoFullscreen() {
+            if (!isMonacoFullscreen) return;
+            
+            // Save content back to textarea
+            if (monacoEditor) {
+                messageInput.value = monacoEditor.getValue();
+                // Trigger input event to resize textarea
+                messageInput.dispatchEvent(new Event('input'));
+            }
+            
+            monacoOverlay.classList.remove('active');
+            
+            setTimeout(() => {
+                monacoOverlay.style.display = 'none';
+                isMonacoFullscreen = false;
+                messageInput.focus();
+            }, 300);
+        }
+        
+        function sendFromMonaco() {
+            if (monacoEditor) {
+                messageInput.value = monacoEditor.getValue();
+                closeMonacoFullscreen();
+                sendMessage();
+            }
+        }
+        
+        // Event listeners for fullscreen toggle
+        fullscreenToggle.addEventListener('click', openMonacoFullscreen);
+        monacoCloseBtn.addEventListener('click', closeMonacoFullscreen);
+        monacoSendBtn.addEventListener('click', sendFromMonaco);
+        
+        // Add Alt+Enter shortcut to open fullscreen from textarea
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.altKey && e.key === 'Enter') {
+                e.preventDefault();
+                openMonacoFullscreen();
+            }
+        });
+        
+        // Close on overlay click (outside the editor container)
+        monacoOverlay.addEventListener('click', function(e) {
+            if (e.target === monacoOverlay) {
+                closeMonacoFullscreen();
+            }
+        });
         
         // Auto-resize textarea
         messageInput.addEventListener('input', function() {
