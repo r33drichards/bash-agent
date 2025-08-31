@@ -77,6 +77,18 @@ def handle_user_message_processing(data, session_id, socketio):
             emit("error", {"message": "Session expired during file processing"})
             return
         llm = sessions[session_id]["llm"]
+        
+        # Check if LLM is initialized (API key available)
+        if llm is None:
+            emit(
+                "message",
+                {
+                    "type": "error",
+                    "content": "⚠️ Please configure your API keys first. Click the '🔑 API Keys' button in the header to set up your Anthropic API key.",
+                    "timestamp": datetime.now().isoformat(),
+                },
+            )
+            return
 
         for file_info in resolved_files:
             if file_info.get("type") == "image":

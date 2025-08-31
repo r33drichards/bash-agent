@@ -1447,6 +1447,7 @@
                 </div>
             </div>
             <button class="history-button" id="file-browser-button" style="background-color: #2ea043 !important;">📁 Files</button>
+            <button class="history-button" id="api-keys-button" title="Configure API Keys">🔑 API Keys</button>
             <button class="history-button" id="history-button">History</button>
             <div class="toggle-container">
                 <span class="toggle-label">Auto-confirm</span>
@@ -1916,6 +1917,14 @@
         fileBrowserButton.addEventListener('click', function() {
             openFileBrowser();
         });
+        
+        // Add API Keys button listener
+        const apiKeysButton = document.getElementById('api-keys-button');
+        if (apiKeysButton) {
+            apiKeysButton.addEventListener('click', function() {
+                showApiKeyModal();
+            });
+        }
         
         fileBrowserClose.addEventListener('click', function() {
             closeFileBrowser();
@@ -3067,6 +3076,334 @@
         sendButton.disabled = true;
         messageInput.focus();
         initializeTokenCounter();
+        
+        // Check for API keys on page load
+        checkAndPromptForApiKeys();
+    </script>
+    
+    <!-- API Key Modal -->
+    <div id="api-key-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Configure API Keys</h2>
+                <span class="close-modal" onclick="closeApiKeyModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p class="modal-description">Please provide your API keys to use the Claude Code Agent. Your keys are stored in the server's environment variables and are never persisted to disk.</p>
+                
+                <div class="form-group">
+                    <label for="anthropic-key">Anthropic API Key (Required)</label>
+                    <input type="password" id="anthropic-key" placeholder="sk-ant-..." class="api-key-input" />
+                    <small class="help-text">Get your key from <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a></small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="openai-key">OpenAI API Key (Optional)</label>
+                    <input type="password" id="openai-key" placeholder="sk-..." class="api-key-input" />
+                    <small class="help-text">Required for GitHub RAG features. Get from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a></small>
+                </div>
+                
+                <div class="error-message" id="api-key-error" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeApiKeyModal()">Cancel</button>
+                <button class="modal-button submit" onclick="submitApiKeys()">Save Keys</button>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h2 {
+            margin: 0;
+            color: #f0f6fc;
+            font-size: 18px;
+        }
+        
+        .close-modal {
+            color: #7d8590;
+            font-size: 24px;
+            cursor: pointer;
+            line-height: 1;
+        }
+        
+        .close-modal:hover {
+            color: #f0f6fc;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .modal-description {
+            color: #7d8590;
+            margin-bottom: 20px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            color: #f0f6fc;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .api-key-input {
+            width: 100%;
+            padding: 8px 12px;
+            background-color: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            color: #e6edf3;
+            font-family: 'SF Mono', 'Monaco', monospace;
+            font-size: 14px;
+        }
+        
+        .api-key-input:focus {
+            outline: none;
+            border-color: #58a6ff;
+        }
+        
+        .help-text {
+            display: block;
+            margin-top: 4px;
+            color: #7d8590;
+            font-size: 12px;
+        }
+        
+        .help-text a {
+            color: #58a6ff;
+            text-decoration: none;
+        }
+        
+        .help-text a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-message {
+            background-color: rgba(248, 81, 73, 0.1);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+            border-radius: 4px;
+            padding: 10px;
+            color: #ff7b72;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid #30363d;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .modal-button {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid #30363d;
+            transition: all 0.2s;
+        }
+        
+        .modal-button.cancel {
+            background-color: #21262d;
+            color: #c9d1d9;
+        }
+        
+        .modal-button.cancel:hover {
+            background-color: #30363d;
+        }
+        
+        .modal-button.submit {
+            background-color: #238636;
+            color: #ffffff;
+            border-color: #238636;
+        }
+        
+        .modal-button.submit:hover {
+            background-color: #2ea043;
+        }
+        
+        .modal-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+    
+    <script>
+        // API Key Management Functions
+        async function checkAndPromptForApiKeys() {
+            try {
+                const response = await fetch('/api/check-api-keys');
+                const data = await response.json();
+                
+                // Show modal if Anthropic key is not configured
+                if (!data.anthropic_configured) {
+                    showApiKeyModal();
+                }
+            } catch (error) {
+                console.error('Error checking API keys:', error);
+            }
+        }
+        
+        function showApiKeyModal() {
+            const modal = document.getElementById('api-key-modal');
+            if (modal) {
+                modal.style.display = 'flex';
+                // Focus on the first input
+                setTimeout(() => {
+                    document.getElementById('anthropic-key').focus();
+                }, 100);
+            }
+        }
+        
+        function closeApiKeyModal() {
+            const modal = document.getElementById('api-key-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            // Clear error message
+            const errorEl = document.getElementById('api-key-error');
+            if (errorEl) {
+                errorEl.style.display = 'none';
+                errorEl.textContent = '';
+            }
+        }
+        
+        async function submitApiKeys() {
+            const anthropicKey = document.getElementById('anthropic-key').value.trim();
+            const openaiKey = document.getElementById('openai-key').value.trim();
+            const errorEl = document.getElementById('api-key-error');
+            const submitButton = document.querySelector('.modal-button.submit');
+            
+            // Clear previous error
+            if (errorEl) {
+                errorEl.style.display = 'none';
+                errorEl.textContent = '';
+            }
+            
+            // Validate required field
+            if (!anthropicKey) {
+                if (errorEl) {
+                    errorEl.textContent = 'Anthropic API key is required';
+                    errorEl.style.display = 'block';
+                }
+                return;
+            }
+            
+            // Disable submit button
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Saving...';
+            }
+            
+            try {
+                console.log('Submitting API keys...');
+                const response = await fetch('/api/set-api-keys', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        anthropic_key: anthropicKey,
+                        openai_key: openaiKey
+                    })
+                });
+                
+                console.log('Response status:', response.status, response.statusText);
+                console.log('Response ok:', response.ok);
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (response.ok) {
+                    // Success - close modal and show success message
+                    closeApiKeyModal();
+                    // Show success message
+                    const messageEl = document.createElement('div');
+                    messageEl.className = 'system-message';
+                    messageEl.innerHTML = '✅ API keys configured successfully. You can now start chatting!';
+                    document.getElementById('messages').appendChild(messageEl);
+                    document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+                } else {
+                    // Show error
+                    if (errorEl) {
+                        errorEl.textContent = data.error || 'Failed to save API keys';
+                        errorEl.style.display = 'block';
+                    }
+                }
+            } catch (error) {
+                console.error('Error saving API keys:', error);
+                console.error('Error details:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                if (errorEl) {
+                    errorEl.textContent = `Network error: ${error.message}. Please try again.`;
+                    errorEl.style.display = 'block';
+                }
+            } finally {
+                // Re-enable submit button
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Save Keys';
+                }
+            }
+        }
+        
+        // Allow Enter key to submit in the modal
+        document.addEventListener('DOMContentLoaded', () => {
+            const modal = document.getElementById('api-key-modal');
+            if (modal) {
+                modal.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        submitApiKeys();
+                    } else if (e.key === 'Escape') {
+                        closeApiKeyModal();
+                    }
+                });
+            }
+        });
     </script>
 </body>
 </html>

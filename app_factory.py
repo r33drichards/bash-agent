@@ -20,6 +20,14 @@ def create_app(config=None):
     if config:
         app.config.update(config)
     
+    # Add CORS headers manually
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+    
     # Register blueprints
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp)

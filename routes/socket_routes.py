@@ -62,10 +62,18 @@ def register_socket_events(socketio, app):
         else:
             print(f"MCP client already initialized with {len(mcp_client.servers)} servers")
 
-        # Now initialize LLM with the session context available (MCP tools will be included if available)
-        sessions[session_id]["llm"] = LLM(
-            "claude-3-7-sonnet-latest", session_id
-        )
+        # Try to initialize LLM with the session context available (MCP tools will be included if available)
+        try:
+            sessions[session_id]["llm"] = LLM(
+                "claude-3-7-sonnet-latest", session_id
+            )
+        except ValueError as e:
+            # If API key is not found, set llm to None - it will be initialized later when API key is set
+            if "ANTHROPIC_API_KEY" in str(e):
+                sessions[session_id]["llm"] = None
+                print(f"Warning: LLM not initialized due to missing API key: {e}")
+            else:
+                raise e
 
         emit("session_started", {"session_id": session_id})
         emit(

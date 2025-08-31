@@ -411,3 +411,65 @@ def upload_to_path():
             "errors": errors,
         }
     )
+
+
+@api_bp.route("/check-api-keys")
+def check_api_keys():
+    """Check if API keys are configured"""
+    anthropic_configured = "ANTHROPIC_API_KEY" in os.environ and bool(os.environ.get("ANTHROPIC_API_KEY"))
+    openai_configured = "OPENAI_API_KEY" in os.environ and bool(os.environ.get("OPENAI_API_KEY"))
+    
+    return jsonify({
+        "anthropic_configured": anthropic_configured,
+        "openai_configured": openai_configured
+    })
+
+
+@api_bp.route("/set-api-keys", methods=["POST"])
+def set_api_keys():
+    """Set API keys in environment variables"""
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    anthropic_key = data.get("anthropic_key", "").strip()
+    openai_key = data.get("openai_key", "").strip()
+    
+    # Validate Anthropic key (required)
+    if not anthropic_key:
+        return jsonify({"error": "Anthropic API key is required"}), 400
+    
+    # Basic validation - check if keys have the expected prefix
+    if not anthropic_key.startswith("sk-ant-"):
+        return jsonify({"error": "Invalid Anthropic API key format"}), 400
+    
+    if openai_key and not openai_key.startswith("sk-"):
+        return jsonify({"error": "Invalid OpenAI API key format"}), 400
+    
+    # Set environment variables
+    os.environ["ANTHROPIC_API_KEY"] = anthropic_key
+    if openai_key:
+        os.environ["OPENAI_API_KEY"] = openai_key
+    
+    # After setting environment variables, reinitialize LLM for all active sessions
+    try:
+        from agent.session_manager import sessions
+        from agent.llm import LLM
+        
+        for session_id, session_data in sessions.items():
+            if session_data.get("llm") is None:
+                # Try to initialize LLM now that API key is available
+                try:
+                    session_data["llm"] = LLM("claude-3-7-sonnet-latest", session_id)
+                    print(f"Successfully initialized LLM for session {session_id}")
+                except Exception as e:
+                    print(f"Failed to initialize LLM for session {session_id}: {e}")
+    except Exception as e:
+        print(f"Error reinitializing LLMs: {e}")
+    
+    return jsonify({
+        "success": True,
+        "anthropic_configured": True,
+        "openai_configured": bool(openai_key)
+    })
