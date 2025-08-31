@@ -1,16 +1,23 @@
 {
   description = "A basic rust cli";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  # inputs.unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
-  inputs.nix-mcp-servers.url = "github:cameronfyfe/nix-mcp-servers";
+  inputs = {
+    system-manager = {
+      url = "github:numtide/system-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    nix-mcp-servers.url = "github:cameronfyfe/nix-mcp-servers";
+  };
 
   outputs =
     {
       self,
       nixpkgs,
       flake-utils,
+      system-manager,
       ...
     }@inputs:
     flake-utils.lib.eachDefaultSystem (
@@ -23,7 +30,6 @@
           inherit pkgs;
           inputs = inputs;
         };
-
 
         # Create a proper derivation for webagent (new)
         webAgentPackage = pkgs.stdenv.mkDerivation {
@@ -142,8 +148,6 @@
           poetry
         ];
 
-  
-
       in
       {
         devShells.default = devshell;
@@ -182,6 +186,13 @@
             ];
           };
         };
+
+        systemConfigs.default = system-manager.lib.makeSystemConfig {
+          modules = [
+            ./modules
+          ];
+        };
+
       }
     );
 }
