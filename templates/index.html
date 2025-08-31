@@ -20,10 +20,21 @@
     <link href="https://unpkg.com/filepond@^4/dist/filepond.css" rel="stylesheet">
     <link href="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css" rel="stylesheet">
     
-    <!-- FilePond JS -->
+    <!-- FilePond JS - Load with AMD conflict prevention -->
+    <script>
+        // Temporarily disable AMD to prevent conflicts with Monaco
+        var oldDefine = window.define;
+        window.define = undefined;
+    </script>
     <script src="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.js"></script>
     <script src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.js"></script>
     <script src="https://unpkg.com/filepond@^4/dist/filepond.js"></script>
+    <script>
+        // Restore AMD if it was defined
+        if (oldDefine) {
+            window.define = oldDefine;
+        }
+    </script>
     <style>
         * {
             margin: 0;
@@ -2345,9 +2356,9 @@
             fileUploadButton.style.backgroundColor = '#21262d';
         }
 
-        // Fallback paste handler for textarea
-        messageInput.addEventListener('paste', function(e) {
-            console.log('Paste event on textarea:', e);
+        // Global paste handler to catch cmd-v anywhere on the page
+        document.addEventListener('paste', function(e) {
+            console.log('Global paste event:', e);
             const items = e.clipboardData.items;
             console.log('Clipboard items:', items);
             
@@ -2358,6 +2369,7 @@
                 if (item.type.indexOf('image') !== -1) {
                     console.log('Image detected in paste!');
                     e.preventDefault();
+                    e.stopPropagation(); // Prevent other handlers from firing
                     
                     const file = item.getAsFile();
                     console.log('File:', file);
@@ -2370,7 +2382,12 @@
                         
                         // Add to FilePond
                         pond.addFile(file);
+                        
+                        // Focus the message input after pasting image
+                        messageInput.focus();
                     }
+                    
+                    return; // Exit early to prevent duplicate handling
                 }
             }
         });
