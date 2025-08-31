@@ -26,6 +26,17 @@ running it locally
 nix run .#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta --mcp example-mcp-config.json --title "happy-chigger"
 ```
 
+### configure ubuntu instance with system manager
+
+```sh
+sudo /nix/var/nix/profiles/default/bin/nix run 'github:numtide/system-manager' -- switch --flake 'github:robertwendt/bash-agent'
+```
+running it locally 
+```
+sudo /nix/var/nix/profiles/default/bin/nix run 'github:numtide/system-manager' -- switch --flake '.'
+```
+
+
 ### What It Does
 
 The agent launches an interactive loop where you can give it instructions. It has access to several tools:

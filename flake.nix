@@ -189,7 +189,51 @@
 
         systemConfigs.default = system-manager.lib.makeSystemConfig {
           modules = [
-            ./modules
+            (
+              {
+                config,
+                lib,
+                pkgs,
+                ...
+              }:
+
+              {
+                config = {
+                  nixpkgs.hostPlatform = "x86_64-linux";
+                  environment = {
+                    systemPackages = baseContents;
+                  };
+
+                  users.users.robertwendt = {
+                    isNormalUser = true;
+                    home = "/home/robertwendt";
+                    description = "Robert Wendt";
+                    extraGroups = [ "wheel" "docker" "adbusers" "kubectl" ];
+                  };
+
+                  systemd.services = {
+                    web-agent = {
+                      enable = true;
+                      description = "Web Agent Service";
+                      after = [ "network.target" ];
+                      wantedBy = [ "multi-user.target" ];
+
+                      serviceConfig = {
+                        Type = "simple";
+                        User = "robertwendt";
+                        Group = "users";
+                        WorkingDirectory = "/home/robertwendt";
+                        Restart = "on-failure";
+                        RestartSec = "5s";
+                      };
+                      script = ''
+                        exec ${lib.getExe webAgentExecutable} --working-dir /home/robertwendt/ --metadata-dir /home/robertwendt/meta --title "$(${pkgs.hostname}/bin/hostname)" "$@"
+                      '';
+                    };
+                  };
+                };
+              }
+            )
           ];
         };
 
