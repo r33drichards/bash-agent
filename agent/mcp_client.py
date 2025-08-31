@@ -48,7 +48,7 @@ class MCPClient:
                         "args": [filesystem_dir],
                     },
                     "playwright": {
-                        "command": "mcp-server-playwright"
+                        "command": "mcp-server-playwright",
                         "args": [
                             "--headless"
                         ]
