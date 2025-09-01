@@ -204,13 +204,7 @@
                     systemPackages = baseContents;
                   };
 
-                  users.users.robertwendt = {
-                    isNormalUser = true;
-                    home = "/home/robertwendt";
-                    description = "Robert Wendt";
-                    extraGroups = [ "wheel" "docker" "adbusers" "kubectl" ];
-                  };
-
+                  
                   systemd.services = {
                     web-agent = {
                       enable = true;
