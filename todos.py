@@ -223,8 +223,13 @@ class TodoManager:
     def search_todos(self, query: str, include_completed: bool = False) -> List[Dict[str, Any]]:
         """Search todos by title or description."""
         # Validate query length and complexity
-        if len(query) > 5000:
-            raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 5000 characters.")
+        MAX_QUERY_LENGTH = 10000
+        if len(query) > MAX_QUERY_LENGTH:
+            # Truncate the query and warn the user
+            truncated_query = query[:MAX_QUERY_LENGTH]
+            import warnings
+            warnings.warn(f"Search query truncated from {len(query)} to {MAX_QUERY_LENGTH} characters")
+            query = truncated_query
         
         where_conditions = ["(title LIKE ? OR description LIKE ?)"]
         params = [f"%{query}%", f"%{query}%"]

@@ -106,8 +106,12 @@ class MemoryManager:
             
             if query:
                 # Validate query length and complexity
-                if len(query) > 5000:
-                    raise ValueError(f"Search query too long ({len(query)} characters). Maximum allowed: 5000 characters.")
+                MAX_QUERY_LENGTH = 10000
+                if len(query) > MAX_QUERY_LENGTH:
+                    # Truncate the query and warn the user
+                    query = query[:MAX_QUERY_LENGTH]
+                    import warnings
+                    warnings.warn(f"Search query truncated from original length to {MAX_QUERY_LENGTH} characters")
                 
                 where_conditions.append("(title LIKE ? OR content LIKE ?)")
                 query_pattern = f"%{query}%"

@@ -14,6 +14,11 @@ def get_current_memory_manager():
         from memory import MemoryManager
         return MemoryManager()
 
+def get_search_optimizer():
+    """Get the search query optimizer."""
+    from search_optimizer import SearchQueryOptimizer
+    return SearchQueryOptimizer()
+
 save_memory_tool = {
     "name": "save_memory",
     "description": "Save information to memory for future reference. Use this to store important facts, solutions, or insights that might be useful later.",
@@ -73,13 +78,22 @@ search_memory_tool = {
 def search_memory(query=None, tags=None, limit=10):
     """Search memories using the current session's memory manager."""
     try:
+        query_warning = ""
+        
+        # If query is suspiciously long, use the optimizer to extract search terms
+        if query and len(query) > 200:
+            optimizer = get_search_optimizer()
+            optimized_query = optimizer.optimize_for_memory_search(query)
+            query_warning = f"\n🔍 Extracted search terms from prompt: '{optimized_query}'\n"
+            query = optimized_query
+        
         memory_manager = get_current_memory_manager()
         memories = memory_manager.search_memories(query, tags, limit)
         
         if not memories:
-            return "No memories found matching the search criteria."
+            return f"{query_warning}No memories found matching the search criteria."
         
-        result_lines = [f"Found {len(memories)} memories:"]
+        result_lines = [f"{query_warning}Found {len(memories)} memories:"]
         for memory in memories:
             result_lines.append(f"\nID: {memory['id']}")
             result_lines.append(f"Title: {memory['title']}")

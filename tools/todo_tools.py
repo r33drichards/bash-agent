@@ -8,6 +8,11 @@ def get_current_todo_manager():
         from todos import TodoManager
         return TodoManager()
 
+def get_search_optimizer():
+    """Get the search query optimizer."""
+    from search_optimizer import SearchQueryOptimizer
+    return SearchQueryOptimizer()
+
 create_todo_tool = {
     "name": "create_todo",
     "description": "Create a new todo item for task tracking. Use this to break down complex work into manageable tasks.",
@@ -237,13 +242,26 @@ search_todos_tool = {
 def search_todos(query, include_completed=False):
     """Search todos using the current session's todo manager."""
     try:
+        original_query = query
+        query_warning = ""
+        
+        # If query is suspiciously long, use the optimizer to extract search terms
+        MAX_REASONABLE_QUERY = 200
+        if len(query) > MAX_REASONABLE_QUERY:
+            optimizer = get_search_optimizer()
+            optimized_query = optimizer.optimize_for_todo_search(query)
+            query_warning = f"\n🔍 Extracted search terms from prompt: '{optimized_query}'\n"
+            query = optimized_query
+        
         todo_manager = get_current_todo_manager()
         todos = todo_manager.search_todos(query, include_completed)
         
         if not todos:
-            return f"No todos found matching '{query}'."
+            truncated_display = query[:100] + "..." if len(query) > 100 else query
+            return f"{query_warning}No todos found matching '{truncated_display}'."
         
-        result_lines = [f"Found {len(todos)} todos matching '{query}':"]
+        truncated_display = query[:100] + "..." if len(query) > 100 else query
+        result_lines = [f"{query_warning}Found {len(todos)} todos matching '{truncated_display}':"]
         for todo in todos:
             status_emoji = {"todo": "📋", "in_progress": "🔄", "completed": "✅"}.get(todo['state'], "📋")
             priority_emoji = {"low": "🔵", "medium": "🟡", "high": "🟠", "urgent": "🔴"}.get(todo['priority'], "🟡")

@@ -23,7 +23,7 @@ nix run github:r33drichards/bash-agent#webagent -- --working-dir `pwd` --port 55
 
 running it locally 
 ```
-nix run .#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta --mcp example-mcp-config.json
+nix run .#webagent -- --working-dir `pwd` --port 5557 --metadata-dir `pwd`/meta --mcp example-mcp-config.json
 ```
 
 ### configure ubuntu instance with system manager
