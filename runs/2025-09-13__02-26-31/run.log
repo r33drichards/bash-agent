@@ -1,0 +1,45 @@
+Processing tasks in duration order (longest first):
++-----+-------------+------------+------------+
+|   # | Task Name   | Duration   | Source     |
++=====+=============+============+============+
+|   1 | hello-world | 9m 0s      | calculated |
++-----+-------------+------------+------------+
+Total tasks: 1
+Starting harness run
+Run ID: 2025-09-13__02-26-31
+Running task: hello-world
+Running docker compose command: docker compose -p hello-world-1-of-1-2025-09-13__02-26-31 -f /home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml build
+Docker compose command failed with exit code 127
+Command: docker compose -p hello-world-1-of-1-2025-09-13__02-26-31 -f /home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml build
+STDERR: docker: symbol lookup error: /nix/store/cg9s562sa33k78m63njfn1rw47dp9z0i-glibc-2.40-66/lib/libc.so.6: undefined symbol: __tunable_is_initialized, version GLIBC_PRIVATE
+
+Running docker compose command: docker compose -p hello-world-1-of-1-2025-09-13__02-26-31 -f /home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml down
+Docker compose command failed with exit code 127
+Command: docker compose -p hello-world-1-of-1-2025-09-13__02-26-31 -f /home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml down
+STDERR: docker: symbol lookup error: /nix/store/cg9s562sa33k78m63njfn1rw47dp9z0i-glibc-2.40-66/lib/libc.so.6: undefined symbol: __tunable_is_initialized, version GLIBC_PRIVATE
+
+Error cleaning up docker compose services: Command '['docker', 'compose', '-p', 'hello-world-1-of-1-2025-09-13__02-26-31', '-f', '/home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml', 'down']' returned non-zero exit status 127.
+Harness execution failed for /home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world: Command '['docker', 'compose', '-p', 'hello-world-1-of-1-2025-09-13__02-26-31', '-f', '/home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml', 'build']' returned non-zero exit status 127.
+Traceback (most recent call last):
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/harness/harness.py", line 1011, in _execute_single_trial
+    trial_results = self._run_trial(trial_handler)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/harness/harness.py", line 717, in _run_trial
+    with spin_up_terminal(
+         ^^^^^^^^^^^^^^^^^
+  File "/nix/store/8w718rm43x7z73xhw9d6vh8s4snrq67h-python3-3.12.10/lib/python3.12/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/terminal/terminal.py", line 176, in spin_up_terminal
+    terminal.start()
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/terminal/terminal.py", line 102, in start
+    self.container = self._compose_manager.start()
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/terminal/docker_compose_manager.py", line 126, in start
+    self._run_docker_compose_command(["build"])
+  File "/home/robertwendt/.local/share/uv/tools/terminal-bench/lib/python3.12/site-packages/terminal_bench/terminal/docker_compose_manager.py", line 101, in _run_docker_compose_command
+    result = subprocess.run(
+             ^^^^^^^^^^^^^^^
+  File "/nix/store/8w718rm43x7z73xhw9d6vh8s4snrq67h-python3-3.12.10/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['docker', 'compose', '-p', 'hello-world-1-of-1-2025-09-13__02-26-31', '-f', '/home/robertwendt/.cache/terminal-bench/terminal-bench-core/head/hello-world/docker-compose.yaml', 'build']' returned non-zero exit status 127.

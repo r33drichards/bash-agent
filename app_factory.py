@@ -36,6 +36,15 @@ def create_app(config=None):
     socketio = SocketIO(app, cors_allowed_origins="*")
     
     # Register socket events
+    # Initialize session DB if provided
+    try:
+        if app.config.get("DB_PATH"):
+            from agent.session_manager import set_db_path
+            set_db_path(app.config["DB_PATH"])
+            print(f"Initialized sessions DB at: {app.config['DB_PATH']}")
+    except Exception as e:
+        print(f"Warning: Could not initialize sessions DB: {e}")
+
     register_socket_events(socketio, app)
     
     return app, socketio

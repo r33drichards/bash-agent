@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import session
 from flask_socketio import emit, join_room, leave_room
 
-from agent.session_manager import sessions
+from agent.session_manager import sessions, create_session, delete_session, touch_session, set_auto_confirm
 from agent.llm import LLM
 from agent.mcp_client import get_mcp_client, initialize_mcp_client
 from agent.message_handler import handle_user_message_processing
@@ -33,6 +33,12 @@ def register_socket_events(socketio, app):
             "memory_manager": MemoryManager(),
             "todo_manager": TodoManager(),
         }
+
+        # Persist session creation
+        try:
+            create_session(session_id, sessions[session_id]["auto_confirm"])
+        except Exception as e:
+            print(f"Warning: failed to persist session: {e}")
 
         # Initialize global MCP client first if not already done
         mcp_client = get_mcp_client()
@@ -96,6 +102,10 @@ def register_socket_events(socketio, app):
         if session_id in sessions:
             # Save conversation history before cleanup
             save_conversation_history(session_id)
+            try:
+                delete_session(session_id)
+            except Exception as e:
+                print(f"Warning: failed to delete session from DB: {e}")
             del sessions[session_id]
         leave_room(session_id)
 
@@ -108,6 +118,12 @@ def register_socket_events(socketio, app):
 
         # Clean up old uploaded files periodically
         cleanup_old_files()
+
+        # Touch session as active
+        try:
+            touch_session(session_id)
+        except Exception:
+            pass
 
         # Delegate to the message handler
         handle_user_message_processing(data, session_id, socketio)
@@ -198,6 +214,10 @@ def register_socket_events(socketio, app):
 
         enabled = data.get("enabled", False)
         sessions[session_id]["auto_confirm"] = enabled
+        try:
+            set_auto_confirm(session_id, enabled)
+        except Exception as e:
+            print(f"Warning: failed to persist auto_confirm change: {e}")
 
         # Send confirmation message
         status = "enabled" if enabled else "disabled"

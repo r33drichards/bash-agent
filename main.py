@@ -29,6 +29,12 @@ def main():
         default=None,
         help="Directory to store conversation history and metadata",
     )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default=None,
+        help="Path to SQLite database file for sessions (e.g., /path/to/agent.db)",
+    )
     # system prompt
     parser.add_argument(
         "--system-prompt",
@@ -67,6 +73,14 @@ def main():
         "TITLE": args.title,
     }
 
+    # Resolve DB path to absolute (based on original CWD)
+    if args.db_path:
+        if os.path.isabs(args.db_path):
+            config["DB_PATH"] = args.db_path
+        else:
+            config["DB_PATH"] = os.path.join(original_cwd, args.db_path)
+        print(f"DB path: {config['DB_PATH']}")
+
     # Change working directory if specified
     if args.working_dir:
         if os.path.exists(args.working_dir):
@@ -95,6 +109,8 @@ def main():
     print(f"\n=== LLM Agent Web Server ===")
     print(f"Starting server on http://{args.host}:{args.port}")
     print(f"Working directory: {os.getcwd()}")
+    if args.db_path:
+        print(f"Sessions DB: {config['DB_PATH']}")
     if args.mcp:
         print(f"MCP configuration: {args.mcp}")
         if os.path.exists(args.mcp):

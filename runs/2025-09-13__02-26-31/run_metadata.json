@@ -1,0 +1,30 @@
+{
+    "run_id": "2025-09-13__02-26-31",
+    "uuid": "ee0fadbb-3df8-415f-915c-d1d1d51476af",
+    "dataset_path": null,
+    "dataset_name": "terminal-bench-core",
+    "dataset_version": "head",
+    "output_path": "/home/robertwendt/bash-agent/runs",
+    "agent_name": "bash-agent",
+    "no_rebuild": false,
+    "cleanup": false,
+    "log_level": 20,
+    "task_ids": [
+        "hello-world"
+    ],
+    "exclude_task_ids": null,
+    "n_tasks": null,
+    "n_concurrent_trials": 4,
+    "n_attempts": 1,
+    "dataset_size": 1,
+    "accuracy": 0.0,
+    "model_name": null,
+    "start_time": "2025-09-13T02:26:39.512158+00:00",
+    "end_time": "2025-09-13T02:26:39.550529+00:00",
+    "commit_hash": "1474c9251eb16850a2a6900bf6f8d4cdad84df68",
+    "username": "robertwendt",
+    "s3_bucket": null,
+    "agent_kwargs": null,
+    "pass_at_k": {},
+    "resumed_at": null
+}

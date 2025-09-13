@@ -27,8 +27,8 @@
         lib = pkgs.lib;
 
         devshell = pkgs.callPackage ./shell.nix {
-          inherit pkgs;
-          inputs = inputs;
+          inherit pkgs inputs;
+          pythonEnv = pythonEnv;
         };
 
         # Create a proper derivation for webagent (new)
@@ -150,7 +150,7 @@
 
       in
       {
-        devShells.default = devshell;
+        devShells.default =  devshell;
 
         # Packages
         packages.default = webAgentExecutable;

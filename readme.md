@@ -18,7 +18,7 @@ Set your Anthropic API key and run the agent with Nix:
 
 ```sh
 export ANTHROPIC_API_KEY=your-anthropic-key
-nix run github:r33drichards/bash-agent#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta
+nix run github:r33drichards/bash-agent#webagent -- --working-dir `pwd` --port 5556 --metadata-dir `pwd`/meta --db-path `pwd`/agent.db
 ```
 
 running it locally 
@@ -86,3 +86,11 @@ This agent can:
 - Modify or overwrite any file on your system
 
 **Use with caution and preferably in an isolated environment.**
+
+
+# running benchmarks 
+```
+nix develop
+uv tool install terminal-bench
+ tb run --agent-import-path tbench:YourCustomAgent --dataset terminal-bench-core==head --task-id hello-world
+```
