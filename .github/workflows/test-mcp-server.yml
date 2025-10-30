@@ -1,0 +1,229 @@
+name: MCP Server Tests
+
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+    paths:
+      - 'mcp-server-git-rag/**'
+      - 'github_rag.py'
+      - 'test-git-rag-integration.sh'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/test-mcp-server.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'mcp-server-git-rag/**'
+      - 'github_rag.py'
+      - 'test-git-rag-integration.sh'
+      - 'flake.nix'
+      - 'flake.lock'
+
+jobs:
+  structure-validation:
+    name: Structure Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run structure validation tests
+        run: |
+          cd mcp-server-git-rag
+          python3 test_structure.py
+
+  nix-tests:
+    name: Nix Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+            experimental-features = nix-command flakes
+
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-mcp-tests-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-mcp-tests-
+          gc-max-store-size-linux: 2G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-mcp-tests-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
+
+      - name: Check flake
+        run: |
+          nix flake check --show-trace
+
+      - name: Build MCP server
+        run: |
+          nix build .#mcp-server-git-rag --show-trace
+
+      - name: Run dependency checks
+        run: |
+          nix develop --command python3 -c "
+          import sys
+          print('Testing imports in Nix environment...')
+
+          errors = []
+
+          try:
+              import mcp
+              print('✓ mcp imported successfully')
+          except ImportError as e:
+              errors.append(f'✗ mcp import failed: {e}')
+
+          try:
+              from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+              print('✓ langchain_openai imported successfully')
+          except ImportError as e:
+              errors.append(f'✗ langchain_openai import failed: {e}')
+
+          try:
+              from langchain_chroma import Chroma
+              print('✓ langchain_chroma imported successfully')
+          except ImportError as e:
+              errors.append(f'✗ langchain_chroma import failed: {e}')
+
+          try:
+              import chromadb
+              print('✓ chromadb imported successfully')
+          except ImportError as e:
+              errors.append(f'✗ chromadb import failed: {e}')
+
+          try:
+              from github_rag import GitHubRAG
+              print('✓ github_rag imported successfully')
+          except ImportError as e:
+              errors.append(f'✗ github_rag import failed: {e}')
+
+          if errors:
+              print('\\nErrors encountered:')
+              for error in errors:
+                  print(error)
+              sys.exit(1)
+          else:
+              print('\\n✓ All dependencies available in Nix environment')
+          "
+
+      - name: Run MCP server dependency test
+        run: |
+          nix develop --command python3 mcp-server-git-rag/test_server.py
+
+  integration-tests:
+    name: Integration Tests (with OpenAI)
+    runs-on: ubuntu-latest
+    # Only run if OPENAI_API_KEY secret is available
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+            experimental-features = nix-command flakes
+
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-mcp-integration-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-mcp-integration-
+          gc-max-store-size-linux: 2G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-mcp-integration-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
+
+      - name: Run integration tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          nix develop --command bash -c "
+          export OPENAI_API_KEY='$OPENAI_API_KEY'
+          ./test-git-rag-integration.sh
+          "
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            MCP_SERVER_TEST_RESULTS.md
+            mcp-server-git-rag/TESTING.md
+
+  build-verification:
+    name: Build Verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v30
+        with:
+          nix_conf: |
+            keep-env-derivations = true
+            keep-outputs = true
+            experimental-features = nix-command flakes
+
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-build-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-build-
+          gc-max-store-size-linux: 2G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-build-
+          purge-created: 0
+          purge-last-accessed: 0
+          purge-primary-key: never
+
+      - name: Build all packages
+        run: |
+          echo "Building webAgent..."
+          nix build .#webAgent --show-trace
+
+          echo "Building mcp-server-git-rag..."
+          nix build .#mcp-server-git-rag --show-trace
+
+          echo "✓ All packages built successfully"
+
+      - name: Verify package structure
+        run: |
+          echo "Verifying mcp-server-git-rag package..."
+
+          # Check that the built package exists
+          if [ ! -L "./result" ]; then
+            echo "✗ Build result not found"
+            exit 1
+          fi
+
+          echo "✓ Build result exists"
+
+          # Check the package structure
+          ls -la ./result/bin/
+
+          echo "✓ Package structure verified"
