@@ -129,14 +129,24 @@ jobs:
   integration-tests:
     name: Integration Tests (with OpenAI)
     runs-on: ubuntu-latest
-    # Only run if OPENAI_API_KEY secret is available
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Check for API key
+        id: check-key
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "has_key=false" >> $GITHUB_OUTPUT
+            echo "⚠️ OPENAI_API_KEY secret not set - integration tests will be skipped"
+          else
+            echo "has_key=true" >> $GITHUB_OUTPUT
+            echo "✓ OPENAI_API_KEY secret is set"
+          fi
+
       - name: Install Nix
+        if: steps.check-key.outputs.has_key == 'true'
         uses: nixbuild/nix-quick-install-action@v30
         with:
           nix_conf: |
@@ -145,6 +155,7 @@ jobs:
             experimental-features = nix-command flakes
 
       - name: Restore and cache Nix store
+        if: steps.check-key.outputs.has_key == 'true'
         uses: nix-community/cache-nix-action@v6
         with:
           primary-key: nix-${{ runner.os }}-mcp-integration-${{ hashFiles('flake.nix', 'flake.lock') }}
@@ -157,6 +168,7 @@ jobs:
           purge-primary-key: never
 
       - name: Run integration tests
+        if: steps.check-key.outputs.has_key == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
@@ -164,6 +176,13 @@ jobs:
           export OPENAI_API_KEY='$OPENAI_API_KEY'
           ./test-git-rag-integration.sh
           "
+
+      - name: Integration tests skipped
+        if: steps.check-key.outputs.has_key == 'false'
+        run: |
+          echo "⚠️ Integration tests skipped - OPENAI_API_KEY secret not configured"
+          echo "This is expected and does not indicate a failure."
+          echo "To enable integration tests, add OPENAI_API_KEY as a repository secret."
 
       - name: Upload test results
         if: always()
