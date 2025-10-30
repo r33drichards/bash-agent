@@ -119,6 +119,15 @@
           '';
         };
 
+        # Git RAG MCP Server executable
+        mcpServerGitRAG = pkgs.writeShellApplication {
+          name = "mcp-server-git-rag";
+          runtimeInputs = [ pythonEnv ];
+          text = ''
+            ${pythonEnv}/bin/python3 ${./mcp-server-git-rag/src/mcp_server_git_rag/server.py} "$@"
+          '';
+        };
+
         baseContents = with pkgs; [
           pythonEnv
           bash
@@ -155,6 +164,7 @@
         # Packages
         packages.default = webAgentExecutable;
         packages.webAgent = webAgentExecutable;
+        packages.mcp-server-git-rag = mcpServerGitRAG;
 
         apps.webagent = {
           type = "app";

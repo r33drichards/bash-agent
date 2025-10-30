@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "git-rag": {
+      "command": "mcp-server-git-rag",
+      "env": {
+        "OPENAI_API_KEY": "your-openai-api-key-here",
+        "GIT_RAG_PERSIST_DIR": "./git_rag_storage"
+      }
+    }
+  }
+}

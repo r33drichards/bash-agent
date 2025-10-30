@@ -44,14 +44,23 @@ The agent launches an interactive loop where you can give it instructions. It ha
 1. **Bash Tool**: Execute shell commands
 2. **SQLite Tool**: Query and modify SQLite databases
 3. **IPython Tool**: Execute Python code with access to common libraries
-4. **File Editing Tools**: 
+4. **File Editing Tools**:
    - Apply unified diffs to files
    - Overwrite files with new content
+5. **Git RAG Tool**: Index and query Git repositories using RAG (also available as standalone MCP server)
 
 Before executing any tool, the agent will:
 - Show you what it's about to do
 - Ask for confirmation
 - For file edits, show a preview of the changes
+
+### MCP Servers
+
+This project includes a standalone MCP server for Git repository RAG:
+
+- **mcp-server-git-rag**: Index and query Git repositories using Retrieval Augmented Generation
+  - See [mcp-server-git-rag/README.md](mcp-server-git-rag/README.md) for details
+  - Can be used with Claude Desktop or any MCP-compatible client
 
 
 ### Local Development
