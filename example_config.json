@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bash-tools": {
+      "command": "python",
+      "args": ["/path/to/bash-agent/mcp_server.py"]
+    }
+  }
+}

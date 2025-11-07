@@ -4,116 +4,105 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is a multi-tool LLM agent that can execute bash commands, SQL queries, Python code, and modify files. The agent provides both a web interface and CLI interface for interacting with Claude.
+This is an MCP (Model Context Protocol) server that exposes bash command execution, SQLite database operations, and IPython code execution as tools that can be used by MCP clients like Claude Desktop.
 
 ### Core Architecture
 
-- **Web Mode**: Flask application with SocketIO for real-time communication
-- **CLI Mode**: Direct command-line interaction through `bash-agent.py`
-- **Agent System**: Modular architecture with separate tools for different functionalities
-- **Session Management**: Persistent conversations with memory and todo tracking
-- **MCP Integration**: Support for Model Context Protocol servers
+- **MCP Server**: Python-based server implementing the Model Context Protocol
+- **Tool Implementations**: Modular tool implementations for bash, SQLite, and IPython
+- **Stdio Transport**: Communication via standard input/output for easy integration
 
 ### Key Components
 
-- `main.py` - Web server entry point with argument parsing and configuration
-- `bash-agent.py` - CLI entry point for direct command-line usage
-- `app_factory.py` - Flask application factory with route registration
-- `agent/` - Core agent logic including LLM client, session management, and tools
-- `routes/` - Web API and UI routes
-- `tools/` - Individual tool implementations (bash, sqlite, ipython, etc.)
-- `templates/` - HTML templates for the web interface
+- `mcp_server.py` - Main MCP server implementation with tool registration and handling
+- `tools/` - Tool implementations for bash, SQLite, and IPython execution
+  - `bash_tool.py` - Execute shell commands with timeout and streaming support
+  - `sqlite_tool.py` - Execute SQL queries on SQLite databases
+  - `ipython_tool.py` - Execute Python code with matplotlib plot support
+- `pyproject.toml` - Python package configuration
+- `flake.nix` - Nix package definition for reproducible builds
 
 ## Common Development Commands
 
-### Running the Application
+### Running the Server
 
-
-**With Nix (if available):**
+**With Nix:**
 ```bash
-export ANTHROPIC_API_KEY=your-anthropic-key
-nix run .#webAgent -- --working-dir $(pwd) --port 5556 --metadata-dir $(pwd)/meta
+nix run .
+```
+
+**With Python:**
+```bash
+python mcp_server.py
 ```
 
 ### Development Environment
 
+**With Nix:**
+```bash
+nix develop
+```
+
+**With pip:**
+```bash
+pip install -e ".[dev]"
+```
 
 ### Testing
 
-Run tests with:
 ```bash
-nix build .#webAgent
+pytest
 ```
-this uses nix to build the app and also runs pytest
 
-## Configuration Options
+### Building
 
-### Command Line Arguments
+```bash
+nix build
+```
 
-- `--port` - Web server port (default: 5000)
-- `--host` - Server host (default: 0.0.0.0)
-- `--working-dir` - Working directory for tool execution
-- `--metadata-dir` - Directory for conversation history and metadata
-- `--auto-confirm` - Skip confirmation prompts for tool execution
-- `--system-prompt` - Custom system prompt file
-- `--mcp` - Path to MCP configuration JSON file
+## Tool Implementations
 
-### MCP Configuration
+### Bash Tool
+- Executes shell commands with configurable timeout
+- Supports streaming output for long-running commands
+- Returns stdout, stderr, and exit code
 
-The system supports MCP (Model Context Protocol) servers. Example configuration in `example-mcp-config.json`:
+### SQLite Tool
+- Executes SQL queries on SQLite databases
+- Supports both read and write operations
+- Can export SELECT results to JSON files
+
+### IPython Tool
+- Executes Python code in IPython environment
+- Automatically captures matplotlib plots as base64 PNG
+- Returns stdout, stderr, rich output, and generated plots
+
+## Security Considerations
+
+All tools execute with the privileges of the server process:
+- Bash tool can execute arbitrary shell commands
+- SQLite tool can access any database the process can read
+- IPython tool can execute arbitrary Python code
+
+Use appropriate sandboxing and access controls in production.
+
+## Configuration
+
+The server uses stdio transport and is designed to be configured in MCP client config files:
+
 ```json
 {
   "mcpServers": {
-    "playwright": {"command": "mcp-server-playwright"},
-    "sequentialthinking": {"command": "mcp-server-sequential-thinking"},
-    "memory": {"command": "mcp-server-memory"}
+    "bash-tools": {
+      "command": "bash-tools-mcp-server"
+    }
   }
 }
 ```
 
-### Environment Variables
-
-- `ANTHROPIC_API_KEY` - Required for Claude API access
-- `OPENAI_API_KEY` - Optional, for GitHub RAG functionality
-
-## Available Tools
-
-### Built-in Tools
-
-1. **Bash Tool** - Execute shell commands with confirmation prompts
-2. **SQLite Tool** - Query and modify SQLite databases
-3. **IPython Tool** - Execute Python code with rich output support
-4. **File Editing Tools** - Apply diffs or overwrite files
-5. **Todo Tools** - Create and manage task lists
-6. **GitHub RAG Tools** - Index and query GitHub repositories
-7. **Memory Tools** - Store and retrieve conversation memory (legacy)
-
-### Security Considerations
-
-- All tool executions require user confirmation by default (unless `--auto-confirm` is used)
-- File operations show previews before execution
-- File browser restricts access to specified working directory
-- Path traversal attacks are prevented by `is_safe_path()` checks
-
-## Database Storage
-
-The application uses SQLite databases stored in the metadata directory:
-- `memory.db` - Legacy memory storage
-- `sessions.db` - Session management
-- `todos.db` - Todo list storage
-
-## Web Interface Features
-
-- Real-time streaming responses via WebSocket
-- File browser with upload/download capabilities
-- Token usage tracking and display
-- Session persistence and conversation history
-- Thinking mode support with collapsible blocks
-
 ## Development Notes
 
-- Uses Flask-SocketIO for real-time communication
-- Implements message validation to prevent orphaned tool results
-- Supports both streaming and non-streaming API responses
-- Handles Claude's thinking mode requirements for conversation history
-- Includes comprehensive error handling and retry logic with exponential backoff
+- Uses the official MCP Python SDK
+- Implements async/await pattern for tool execution
+- Each tool returns a list of MCP content types (TextContent, ImageContent)
+- Error handling returns error messages as TextContent
